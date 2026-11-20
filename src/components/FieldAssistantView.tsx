@@ -1,24 +1,16 @@
-import React, { useRef, useState } from 'react';
+import React, { useEffect, useRef, useState } from 'react';
 import { InferenceMode } from 'firebase/ai';
 import {
-  AlertTriangle,
-  BookOpen,
-  Camera,
-  CheckCircle2,
-  ChevronDown,
-  ChevronUp,
-  Cpu,
-  HeartPulse,
-  Image as ImageIcon,
-  Mic,
-  MicOff,
-  Send,
-  ShieldAlert,
-  Sparkles,
-  Upload,
-  WifiOff,
-  X,
-} from 'lucide-react';
+  CameraIcon,
+  CheckCircleIcon,
+  ChevronDownIcon,
+  ChevronUpIcon,
+  ImageIcon,
+  MicIcon,
+  MicOffIcon,
+  SendIcon,
+  XIcon,
+} from './icons';
 import {
   AidCamp,
   CampStatus,
@@ -30,6 +22,7 @@ import {
 } from '../types/crisis';
 import { InferenceBadge } from './InferenceBadge';
 import { CameraCaptureModal } from './CameraCaptureModal';
+import { FormattedText } from './FormattedText';
 
 interface FieldAssistantViewProps {
   camps: AidCamp[];
@@ -76,16 +69,18 @@ export const FieldAssistantView: React.FC<FieldAssistantViewProps> = ({
   const [attachedImage, setAttachedImage] = useState<string | null>(null);
   const [voiceUsed, setVoiceUsed] = useState(false);
   const [listening, setListening] = useState(false);
+  const [voiceError, setVoiceError] = useState<string | null>(null);
   const [sending, setSending] = useState(false);
   const [cameraOpen, setCameraOpen] = useState(false);
   const [modeOverride, setModeOverride] = useState<'AUTO' | InferenceMode>('AUTO');
   const [expandedProtocolId, setExpandedProtocolId] = useState<string>('proto-cpr');
 
-  // Offline Field Report state
-  const [reportCampId, setReportCampId] = useState<string>(defaultReportCampId || camps[2]?.id || camps[0]?.id || '');
-  const [reportBeds, setReportBeds] = useState<number>(5);
-  const [reportSafety, setReportSafety] = useState<number>(6);
-  const [reportStatus, setReportStatus] = useState<CampStatus>('ACTIVE');
+  const initialCamp =
+    camps.find((c) => c.id === defaultReportCampId) ?? camps[2] ?? camps[0];
+  const [reportCampId, setReportCampId] = useState<string>(initialCamp?.id || '');
+  const [reportBeds, setReportBeds] = useState<number>(initialCamp?.availableBeds ?? 5);
+  const [reportSafety, setReportSafety] = useState<number>(initialCamp?.safetyLevel ?? 6);
+  const [reportStatus, setReportStatus] = useState<CampStatus>(initialCamp?.status ?? 'ACTIVE');
   const [reportNotes, setReportNotes] = useState<string>('');
   const [reportPhoto, setReportPhoto] = useState<string | undefined>(undefined);
   const [reportSavedBanner, setReportSavedBanner] = useState<boolean>(false);
@@ -93,8 +88,37 @@ export const FieldAssistantView: React.FC<FieldAssistantViewProps> = ({
   const fileInputRef = useRef<HTMLInputElement>(null);
   const reportPhotoRef = useRef<HTMLInputElement>(null);
   const recognitionRef = useRef<SpeechRecognitionLike | null>(null);
+  const transcriptEndRef = useRef<HTMLDivElement>(null);
 
   const isOffline = operatingMode === 'FIELD_OFFLINE';
+
+  // Sync default report camp when navigating from Tactical Map inspector
+  useEffect(() => {
+    if (!defaultReportCampId) return;
+    const target = camps.find((c) => c.id === defaultReportCampId);
+    if (!target) return;
+    setReportCampId(target.id);
+    setReportBeds(target.availableBeds);
+    setReportSafety(target.safetyLevel);
+    setReportStatus(target.status);
+  }, [defaultReportCampId, camps]);
+
+  // Keep newest assistant reply scrolled into view
+  useEffect(() => {
+    if (messages.length <= 1) return;
+    const reduced = window.matchMedia?.('(prefers-reduced-motion: reduce)').matches;
+    transcriptEndRef.current?.scrollIntoView({ behavior: reduced ? 'auto' : 'smooth' });
+  }, [messages]);
+
+  const handleSelectReportCamp = (campId: string) => {
+    setReportCampId(campId);
+    const target = camps.find((c) => c.id === campId);
+    if (target) {
+      setReportBeds(target.availableBeds);
+      setReportSafety(target.safetyLevel);
+      setReportStatus(target.status);
+    }
+  };
 
   const handleImageAttach = (
     e: React.ChangeEvent<HTMLInputElement>,
@@ -113,13 +137,16 @@ export const FieldAssistantView: React.FC<FieldAssistantViewProps> = ({
   };
 
   const toggleVoiceInput = () => {
+    setVoiceError(null);
     const w = window as unknown as {
       SpeechRecognition?: new () => SpeechRecognitionLike;
       webkitSpeechRecognition?: new () => SpeechRecognitionLike;
     };
     const SpeechRec = w.SpeechRecognition ?? w.webkitSpeechRecognition;
     if (!SpeechRec) {
-      alert('Web Speech API voice recognition is not supported in this browser. Try Chrome Desktop.');
+      setVoiceError(
+        'Voice transcription is unavailable in this browser. Type your query below or open in Chrome Desktop.'
+      );
       return;
     }
 
@@ -140,7 +167,10 @@ export const FieldAssistantView: React.FC<FieldAssistantViewProps> = ({
         setVoiceUsed(true);
       }
     };
-    rec.onerror = () => setListening(false);
+    rec.onerror = () => {
+      setListening(false);
+      setVoiceError('Microphone capture failed. Check mic permissions or type your query below.');
+    };
     rec.onend = () => setListening(false);
     recognitionRef.current = rec;
     setListening(true);
@@ -151,6 +181,7 @@ export const FieldAssistantView: React.FC<FieldAssistantViewProps> = ({
     const query = (customText ?? input).trim();
     if (!query || sending) return;
     setSending(true);
+    setVoiceError(null);
     const imgToSend = attachedImage ?? undefined;
     const usedVoice = voiceUsed;
     setInput('');
@@ -179,8 +210,8 @@ export const FieldAssistantView: React.FC<FieldAssistantViewProps> = ({
       campName: camp.name,
       workerId: 'worker-self',
       workerName: 'Field Worker (This Device)',
-      reportedBeds: reportStatus === 'DESTROYED' ? 0 : Math.max(0, reportBeds),
-      reportedSafety: reportStatus === 'DESTROYED' ? 1 : reportSafety,
+      reportedBeds: reportStatus === 'DESTROYED' ? 0 : Math.max(0, Math.min(200, reportBeds)),
+      reportedSafety: reportStatus === 'DESTROYED' ? 1 : Math.max(1, Math.min(10, reportSafety)),
       reportedStatus: reportStatus,
       notes:
         reportNotes.trim() ||
@@ -198,102 +229,107 @@ export const FieldAssistantView: React.FC<FieldAssistantViewProps> = ({
   return (
     <div className="grid grid-cols-1 gap-4 xl:grid-cols-12">
       {/* Left 7 Columns: Multimodal Field AI Assistant */}
-      <div className="flex flex-col overflow-hidden rounded-2xl border border-slate-800 bg-slate-900/80 xl:col-span-7">
+      <section className="flex flex-col self-start overflow-hidden rounded-xl border border-hairline bg-surface xl:col-span-7">
         {/* Assistant Header */}
-        <div className="flex flex-wrap items-center justify-between gap-2 border-b border-slate-800 bg-slate-950/70 px-4 py-3">
+        <div className="flex flex-wrap items-center justify-between gap-3 border-b border-hairline px-4 py-3">
           <div>
-            <div className="flex items-center gap-2">
-              <Cpu className="h-4 w-4 text-emerald-400" />
-              <h2 className="text-sm font-bold text-white">
-                In-Field Hybrid AI Assistant (RAG over Downloaded DB)
-              </h2>
-            </div>
-            <p className="mt-0.5 text-[11px] text-slate-400">
-              User Input (Text / Voice / Photo) → On-Device Gemini Nano 4 → Queries Downloaded Aid DB & Protocols
+            <h2 className="text-sm font-semibold text-ink-primary">Field triage assistant</h2>
+            <p className="mt-0.5 text-xs text-ink-muted">
+              Text, voice, or photo grounded in local aid camps and emergency protocols
             </p>
           </div>
 
-          <div className="flex items-center gap-2">
-            <label className="flex items-center gap-1.5 text-[11px] text-slate-400">
-              <span>SDK Mode:</span>
-              <select
-                value={modeOverride}
-                onChange={(e) => setModeOverride(e.target.value as 'AUTO' | InferenceMode)}
-                className="rounded-lg border border-slate-700 bg-slate-900 px-2 py-1 font-mono text-[11px] text-cyan-300 focus:border-cyan-500 focus:outline-none"
-              >
-                <option value="AUTO">
-                  AUTO ({isOffline ? 'ONLY_ON_DEVICE' : 'PREFER_ON_DEVICE'})
-                </option>
-                <option value={InferenceMode.PREFER_ON_DEVICE}>PREFER_ON_DEVICE</option>
-                <option value={InferenceMode.ONLY_ON_DEVICE}>ONLY_ON_DEVICE</option>
-                <option value={InferenceMode.PREFER_IN_CLOUD}>PREFER_IN_CLOUD</option>
-                <option value={InferenceMode.ONLY_IN_CLOUD}>ONLY_IN_CLOUD</option>
-              </select>
-            </label>
-          </div>
+          <label className="flex items-center gap-2 text-xs text-ink-secondary">
+            <span>SDK mode</span>
+            <select
+              value={modeOverride}
+              onChange={(e) => setModeOverride(e.target.value as 'AUTO' | InferenceMode)}
+              className="h-9 rounded-md border border-control bg-recessed px-2 font-mono text-xs text-ink-primary sm:h-8 sm:text-[11px]"
+            >
+              <option value="AUTO">
+                Auto ({isOffline ? 'ONLY_ON_DEVICE' : 'PREFER_ON_DEVICE'})
+              </option>
+              <option value={InferenceMode.PREFER_ON_DEVICE}>PREFER_ON_DEVICE</option>
+              <option value={InferenceMode.ONLY_ON_DEVICE}>ONLY_ON_DEVICE</option>
+              <option value={InferenceMode.PREFER_IN_CLOUD}>PREFER_IN_CLOUD</option>
+              <option value={InferenceMode.ONLY_IN_CLOUD}>ONLY_IN_CLOUD</option>
+            </select>
+          </label>
         </div>
 
-        {/* Downloaded Pack Status Strip */}
-        <div className="flex flex-wrap items-center justify-between gap-2 border-b border-slate-800/70 bg-slate-900/60 px-4 py-1.5 text-[11px]">
-          <div className="flex items-center gap-2 text-slate-300">
-            {isOffline ? (
-              <span className="inline-flex items-center gap-1 font-semibold text-amber-300">
-                <WifiOff className="h-3.5 w-3.5" /> OFFLINE FIELD MODE — Strictly On-Device Nano 4
-              </span>
-            ) : (
-              <span className="inline-flex items-center gap-1 font-semibold text-emerald-300">
-                <Sparkles className="h-3.5 w-3.5" /> HYBRID MODE — Prefers Nano 4, Auto Cloud Fallback
-              </span>
-            )}
-          </div>
-          <span className="font-mono text-[10px] text-slate-400">
+        {/* Context Status Bar */}
+        <div className="flex flex-wrap items-center justify-between gap-2 border-b border-hairline bg-recessed/70 px-4 py-2 text-xs">
+          <span className="inline-flex items-center gap-2 text-ink-secondary">
+            <span
+              className={`h-1.5 w-1.5 rounded-full ${isOffline ? 'bg-caution' : 'bg-safe'}`}
+            />
+            <span>
+              {isOffline
+                ? 'Field offline: locked to on-device Gemini Nano 4'
+                : 'Hybrid routing: prefers Nano 4 with Cloud Gemini fallback'}
+            </span>
+          </span>
+          <span className="tabular font-mono text-[11px] text-ink-muted">
             {snapshot
-              ? `Local Pack ${snapshot.checksum} (${snapshot.campCount} camps, ${snapshot.protocolCount} protocols)`
-              : `Live Cache (${camps.length} camps, ${protocols.length} protocols)`}
+              ? `Pack ${snapshot.checksum} · ${snapshot.campCount} camps · ${snapshot.protocolCount} protocols`
+              : `Live cache · ${camps.length} camps · ${protocols.length} protocols`}
           </span>
         </div>
 
-        {/* Chat Message Stream */}
-        <div className="flex-1 space-y-3 overflow-y-auto p-4" style={{ minHeight: '380px', maxHeight: '520px' }}>
+        {/* Chat Transcript */}
+        <div
+          aria-live="polite"
+          className="h-[310px] space-y-3 overflow-y-auto p-4 xl:h-[340px]"
+        >
           {messages.map((msg) => (
             <div
               key={msg.id}
               className={`flex flex-col ${msg.role === 'user' ? 'items-end' : 'items-start'}`}
             >
               <div
-                className={`max-w-[92%] rounded-2xl px-3.5 py-2.5 text-xs leading-relaxed ${
+                className={`max-w-[90%] rounded-lg border px-3.5 py-2.5 text-[13px] leading-relaxed ${
                   msg.role === 'user'
-                    ? 'border border-cyan-500/30 bg-cyan-950/60 text-cyan-50'
-                    : 'border border-slate-800 bg-slate-950/90 text-slate-200'
+                    ? 'border-accent/35 bg-raised text-ink-primary'
+                    : 'border-hairline bg-recessed text-ink-primary'
                 }`}
               >
                 {msg.imageDataUrl && (
                   <img
                     src={msg.imageDataUrl}
                     alt="Attached field photo"
-                    className="mb-2 max-h-44 rounded-lg border border-slate-700 object-cover"
+                    className="mb-2 max-h-44 rounded-md border border-hairline object-cover"
                   />
                 )}
                 {msg.voiceUsed && msg.role === 'user' && (
-                  <div className="mb-1 inline-flex items-center gap-1 rounded bg-cyan-500/20 px-1.5 py-0.5 font-mono text-[10px] text-cyan-300">
-                    <Mic className="h-2.5 w-2.5" /> VOICE TRANSCRIPT
+                  <div className="mb-1.5 inline-flex items-center gap-1.5 text-[11px] font-medium text-ink-muted">
+                    <MicIcon size={12} />
+                    <span>Voice transcript</span>
                   </div>
                 )}
-                <div className="whitespace-pre-line">{msg.text || (msg.streaming ? 'Thinking...' : '')}</div>
+
+                {msg.role === 'assistant' ? (
+                  msg.text ? (
+                    <FormattedText text={msg.text} />
+                  ) : (
+                    <span className="text-ink-muted">Generating response...</span>
+                  )
+                ) : (
+                  <div className="whitespace-pre-line">{msg.text}</div>
+                )}
 
                 {msg.role === 'assistant' && msg.inferenceSource && (
-                  <div className="mt-2.5 flex flex-wrap items-center justify-between gap-2 border-t border-slate-800/80 pt-2">
+                  <div className="mt-3 flex flex-wrap items-center justify-between gap-2 border-t border-hairline pt-2.5">
                     <InferenceBadge
                       source={msg.inferenceSource}
                       latencyMs={msg.latencyMs}
                       requestedMode={msg.requestedMode}
                     />
                     {msg.sourcesCited && msg.sourcesCited.length > 0 && (
-                      <div className="flex flex-wrap gap-1">
+                      <div className="flex flex-wrap gap-1.5">
                         {msg.sourcesCited.map((src) => (
                           <span
                             key={src}
-                            className="rounded bg-slate-800 px-1.5 py-0.5 font-mono text-[9.5px] text-slate-400"
+                            className="rounded border border-hairline bg-surface px-1.5 py-0.5 font-mono text-[11px] text-ink-muted"
                           >
                             {src}
                           </span>
@@ -305,46 +341,63 @@ export const FieldAssistantView: React.FC<FieldAssistantViewProps> = ({
               </div>
             </div>
           ))}
+          <div ref={transcriptEndRef} />
         </div>
 
-        {/* Quick Prompts + Multimodal Composer */}
-        <div className="border-t border-slate-800 bg-slate-950/80 p-3">
-          <div className="mb-2 flex flex-wrap gap-1.5 text-[11px]">
+        {/* Prompts + Composer */}
+        <div className="border-t border-hairline bg-recessed/70 p-4">
+          <div className="mb-3 flex flex-wrap gap-1.5">
             {[
-              'Adult unresponsive and not breathing — give CPR steps now',
-              'Severe arterial leg bleeding — tourniquet protocol + nearest trauma camp',
-              'Tell me the safest & shortest camp with open beds right now',
-              'How do I purify flood water with bleach?',
+              'Adult unresponsive and not breathing, give CPR steps',
+              'Severe arterial leg bleeding, tourniquet steps and nearest trauma camp',
+              'Safest camp with open beds right now',
+              'How to purify flood water with bleach',
             ].map((q) => (
               <button
                 key={q}
                 onClick={() => handleSend(q)}
-                className="rounded-full border border-slate-800 bg-slate-900 px-2.5 py-1 text-slate-300 transition hover:border-cyan-500/40 hover:text-cyan-200"
+                className="rounded-md border border-hairline bg-surface px-2.5 py-1.5 text-xs text-ink-secondary transition-colors duration-150 hover:border-control hover:text-ink-primary sm:py-1"
               >
                 {q}
               </button>
             ))}
           </div>
 
+          {voiceError && (
+            <div
+              role="alert"
+              className="mb-3 flex items-center justify-between gap-2 rounded-lg border border-caution/35 bg-caution-dim/60 px-3 py-2 text-xs text-ink-primary"
+            >
+              <span>{voiceError}</span>
+              <button
+                onClick={() => setVoiceError(null)}
+                aria-label="Dismiss voice error"
+                className="rounded p-1 text-ink-secondary hover:bg-ink-primary/10 hover:text-ink-primary"
+              >
+                <XIcon size={13} />
+              </button>
+            </div>
+          )}
+
           {attachedImage && (
-            <div className="mb-2 inline-flex items-center gap-2 rounded-xl border border-cyan-500/30 bg-slate-900 p-1.5 pr-2.5">
+            <div className="mb-3 inline-flex items-center gap-2 rounded-lg border border-control bg-surface p-1.5 pr-2.5">
               <img
                 src={attachedImage}
-                alt="Preview"
-                className="h-10 w-10 rounded-lg object-cover"
+                alt="Attached preview"
+                className="h-9 w-9 rounded object-cover"
               />
-              <span className="text-[11px] text-cyan-200">Multimodal photo ready</span>
+              <span className="text-xs text-ink-secondary">Photo attached</span>
               <button
                 onClick={() => setAttachedImage(null)}
-                className="rounded p-0.5 text-slate-400 hover:bg-slate-800 hover:text-white"
+                className="rounded p-1 text-ink-muted transition-colors duration-150 hover:bg-raised hover:text-ink-primary"
+                aria-label="Remove attached photo"
               >
-                <X className="h-3.5 w-3.5" />
+                <XIcon size={14} />
               </button>
             </div>
           )}
 
           <div className="flex items-center gap-2">
-            {/* Image Upload & Live Camera Snapshot */}
             <input
               ref={fileInputRef}
               type="file"
@@ -355,110 +408,106 @@ export const FieldAssistantView: React.FC<FieldAssistantViewProps> = ({
             />
             <button
               onClick={() => fileInputRef.current?.click()}
-              title="Upload photo from device (Multimodal input)"
-              className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl border border-slate-700 bg-slate-900 text-slate-300 transition hover:border-cyan-500/50 hover:text-cyan-300"
+              title="Upload photo from device"
+              aria-label="Upload photo"
+              className="btn-secondary flex h-10 w-10 shrink-0 items-center justify-center rounded-lg text-ink-secondary sm:h-9 sm:w-9"
             >
-              <ImageIcon className="h-4 w-4" />
+              <ImageIcon size={16} />
             </button>
             <button
               onClick={() => setCameraOpen(true)}
-              title="Open live camera viewfinder (Multimodal capture)"
-              className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl border border-slate-700 bg-slate-900 text-slate-300 transition hover:border-cyan-500/50 hover:text-cyan-300"
+              title="Capture live camera photo"
+              aria-label="Open camera"
+              className="btn-secondary flex h-10 w-10 shrink-0 items-center justify-center rounded-lg text-ink-secondary sm:h-9 sm:w-9"
             >
-              <Camera className="h-4 w-4" />
+              <CameraIcon size={16} />
             </button>
-
-            {/* Voice Mic Button */}
             <button
               onClick={toggleVoiceInput}
-              title="Voice query via microphone (Hands-free field input)"
-              className={`flex h-10 w-10 shrink-0 items-center justify-center rounded-xl border transition ${
+              title="Voice input via microphone"
+              aria-label={listening ? 'Stop voice input' : 'Start voice input'}
+              aria-pressed={listening}
+              className={`flex h-10 w-10 shrink-0 items-center justify-center rounded-lg border transition-colors duration-150 ease-instrument sm:h-9 sm:w-9 ${
                 listening
-                  ? 'animate-pulse border-red-500 bg-red-500/20 text-red-300'
-                  : 'border-slate-700 bg-slate-900 text-slate-300 hover:border-cyan-500/50 hover:text-cyan-300'
+                  ? 'border-hazard bg-hazard-dim text-hazard'
+                  : 'border-control bg-raised text-ink-secondary hover:bg-raised-hover hover:text-ink-primary'
               }`}
             >
-              {listening ? <MicOff className="h-4 w-4" /> : <Mic className="h-4 w-4" />}
+              {listening ? <MicOffIcon size={16} /> : <MicIcon size={16} />}
             </button>
 
             <input
               type="text"
+              aria-label="Ask Field AI"
               value={input}
               onChange={(e) => setInput(e.target.value)}
               onKeyDown={(e) => e.key === 'Enter' && handleSend()}
               placeholder={
-                listening
-                  ? 'Listening to voice query...'
-                  : 'Ask about nearest safe camp, beds, CPR, trauma triage, or attach a photo...'
+                listening ? 'Listening...' : 'Ask about camps, beds, CPR, or trauma triage'
               }
-              className="h-10 flex-1 rounded-xl border border-slate-700 bg-slate-900 px-3 text-xs text-white placeholder-slate-500 focus:border-cyan-500 focus:outline-none"
+              className="h-10 flex-1 rounded-lg border border-control bg-surface px-3 text-base text-ink-primary placeholder:text-ink-muted sm:h-9 sm:text-xs"
             />
 
             <button
               onClick={() => handleSend()}
               disabled={sending || !input.trim()}
-              className="flex h-10 items-center gap-1.5 rounded-xl bg-gradient-to-r from-emerald-600 to-cyan-600 px-4 text-xs font-bold text-white transition hover:brightness-110 disabled:opacity-50"
+              className="btn-primary flex h-10 items-center gap-1.5 rounded-lg px-4 text-xs font-medium disabled:opacity-50 sm:h-9"
             >
-              <Send className="h-3.5 w-3.5" />
-              <span>{sending ? 'Running' : 'Send'}</span>
+              <SendIcon size={14} />
+              <span>{sending ? 'Sending' : 'Send'}</span>
             </button>
           </div>
         </div>
-      </div>
+      </section>
 
-      {/* Right 5 Columns: Offline Emergency Protocols + Field Report Logger */}
+      {/* Right 5 Columns: Field Observation Logger + Offline Protocols */}
       <div className="flex flex-col gap-4 xl:col-span-5">
-        {/* Offline Field Report Submission Form */}
-        <div className="rounded-2xl border border-slate-800 bg-slate-900/85 p-4">
-          <div className="mb-3 flex items-center justify-between">
-            <div>
-              <h3 className="flex items-center gap-1.5 text-sm font-bold text-white">
-                <Upload className="h-4 w-4 text-violet-400" />
-                Log Field Observation {isOffline ? '(Offline Outbox + Mesh)' : '(Cloud Queue)'}
-              </h3>
-              <p className="text-[11px] text-slate-400">
-                Reports sync via Local Mesh offline and reconcile in Cloud Gemini upon reconnect.
-              </p>
-            </div>
+        {/* Field Report Form */}
+        <section className="rounded-xl border border-hairline bg-surface p-4">
+          <div className="mb-3">
+            <h3 className="text-sm font-semibold text-ink-primary">Log field observation</h3>
+            <p className="mt-0.5 text-xs text-ink-muted">
+              {isOffline
+                ? 'Queues offline and relays over local mesh until Base camp reconnect'
+                : 'Queues for Cloud Gemini conflict reconciliation and relays to local mesh'}
+            </p>
           </div>
 
-          <form onSubmit={handleReportSubmit} className="space-y-2.5 text-xs">
-            <div className="grid grid-cols-2 gap-2">
+          <form onSubmit={handleReportSubmit} className="space-y-3 text-xs">
+            <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
               <label className="block">
-                <span className="mb-1 block text-[11px] text-slate-400">Aid Camp</span>
+                <span className="mb-1.5 block font-medium text-ink-secondary">Aid camp</span>
                 <select
                   value={reportCampId}
-                  onChange={(e) => setReportCampId(e.target.value)}
-                  className="w-full rounded-lg border border-slate-700 bg-slate-950 px-2.5 py-1.5 text-xs text-white"
+                  onChange={(e) => handleSelectReportCamp(e.target.value)}
+                  className="h-10 w-full rounded-lg border border-control bg-recessed px-2.5 text-base text-ink-primary sm:h-9 sm:text-xs"
                 >
                   {camps.map((c) => (
                     <option key={c.id} value={c.id}>
-                      {c.code} — {c.name}
+                      {c.code}: {c.name}
                     </option>
                   ))}
                 </select>
               </label>
 
               <label className="block">
-                <span className="mb-1 block text-[11px] text-slate-400">Observed Status</span>
+                <span className="mb-1.5 block font-medium text-ink-secondary">Observed status</span>
                 <select
                   value={reportStatus}
                   onChange={(e) => setReportStatus(e.target.value as CampStatus)}
-                  className="w-full rounded-lg border border-slate-700 bg-slate-950 px-2.5 py-1.5 text-xs text-white"
+                  className="h-10 w-full rounded-lg border border-control bg-recessed px-2.5 text-base text-ink-primary sm:h-9 sm:text-xs"
                 >
-                  <option value="ACTIVE">ACTIVE</option>
-                  <option value="OVERCROWDED">OVERCROWDED</option>
-                  <option value="DAMAGED">DAMAGED</option>
-                  <option value="DESTROYED">DESTROYED (Triggers Alert)</option>
+                  <option value="ACTIVE">Active</option>
+                  <option value="OVERCROWDED">Overcrowded</option>
+                  <option value="DAMAGED">Damaged</option>
+                  <option value="DESTROYED">Destroyed (broadcast alert)</option>
                 </select>
               </label>
             </div>
 
-            <div className="grid grid-cols-2 gap-2">
+            <div className="grid grid-cols-2 gap-3">
               <label className="block">
-                <span className="mb-1 block text-[11px] text-slate-400">
-                  Counted Available Beds
-                </span>
+                <span className="mb-1.5 block font-medium text-ink-secondary">Open beds</span>
                 <input
                   type="number"
                   min={0}
@@ -466,14 +515,12 @@ export const FieldAssistantView: React.FC<FieldAssistantViewProps> = ({
                   value={reportStatus === 'DESTROYED' ? 0 : reportBeds}
                   disabled={reportStatus === 'DESTROYED'}
                   onChange={(e) => setReportBeds(Number(e.target.value))}
-                  className="w-full rounded-lg border border-slate-700 bg-slate-950 px-2.5 py-1.5 font-mono text-xs text-white disabled:opacity-50"
+                  className="tabular h-10 w-full rounded-lg border border-control bg-recessed px-2.5 font-mono text-base text-ink-primary disabled:opacity-50 sm:h-9 sm:text-xs"
                 />
               </label>
 
               <label className="block">
-                <span className="mb-1 block text-[11px] text-slate-400">
-                  Safety Level (1=Hazard, 10=Safe)
-                </span>
+                <span className="mb-1.5 block font-medium text-ink-secondary">Safety (1–10)</span>
                 <input
                   type="number"
                   min={1}
@@ -481,20 +528,24 @@ export const FieldAssistantView: React.FC<FieldAssistantViewProps> = ({
                   value={reportStatus === 'DESTROYED' ? 1 : reportSafety}
                   disabled={reportStatus === 'DESTROYED'}
                   onChange={(e) => setReportSafety(Number(e.target.value))}
-                  className="w-full rounded-lg border border-slate-700 bg-slate-950 px-2.5 py-1.5 font-mono text-xs text-white disabled:opacity-50"
+                  className="tabular h-10 w-full rounded-lg border border-control bg-recessed px-2.5 font-mono text-base text-ink-primary disabled:opacity-50 sm:h-9 sm:text-xs"
                 />
               </label>
             </div>
 
-            <textarea
-              rows={2}
-              value={reportNotes}
-              onChange={(e) => setReportNotes(e.target.value)}
-              placeholder="Field notes: casualties incoming, generator fuel, road blockage, smoke..."
-              className="w-full rounded-lg border border-slate-700 bg-slate-950 px-2.5 py-1.5 text-xs text-white placeholder-slate-500"
-            />
+            <label className="block">
+              <span className="mb-1.5 block font-medium text-ink-secondary">Field notes</span>
+              <textarea
+                rows={2}
+                maxLength={280}
+                value={reportNotes}
+                onChange={(e) => setReportNotes(e.target.value)}
+                placeholder="Incoming casualties, generator fuel, road blockage, smoke"
+                className="w-full rounded-lg border border-control bg-recessed px-3 py-2 text-base text-ink-primary placeholder:text-ink-muted sm:text-xs"
+              />
+            </label>
 
-            <div className="flex items-center justify-between gap-2">
+            <div className="flex flex-wrap items-center justify-between gap-2 pt-1">
               <div>
                 <input
                   ref={reportPhotoRef}
@@ -506,105 +557,107 @@ export const FieldAssistantView: React.FC<FieldAssistantViewProps> = ({
                 <button
                   type="button"
                   onClick={() => reportPhotoRef.current?.click()}
-                  className="inline-flex items-center gap-1.5 rounded-lg border border-slate-700 bg-slate-950 px-2.5 py-1.5 text-[11px] text-slate-300 hover:border-slate-500"
+                  className="btn-secondary inline-flex h-10 items-center gap-1.5 rounded-lg px-3 text-xs font-medium text-ink-secondary sm:h-9"
                 >
-                  <ImageIcon className="h-3.5 w-3.5 text-cyan-400" />
-                  <span>{reportPhoto ? 'Photo Attached ✓' : 'Attach Ward Photo'}</span>
+                  <ImageIcon size={14} className="text-ink-muted" />
+                  <span>{reportPhoto ? 'Photo attached' : 'Attach ward photo'}</span>
                 </button>
               </div>
 
               <button
                 type="submit"
-                className="rounded-xl bg-violet-600 px-4 py-2 text-xs font-bold text-white transition hover:bg-violet-500"
+                className={`${
+                  reportStatus === 'DESTROYED' ? 'btn-danger' : 'btn-primary'
+                } h-10 rounded-lg px-4 text-xs font-medium sm:h-9`}
               >
                 {reportStatus === 'DESTROYED'
-                  ? 'Broadcast Emergency Report'
+                  ? 'Broadcast alert'
                   : isOffline
-                    ? 'Queue Offline + Mesh'
-                    : 'Queue for Cloud Resolution'}
+                    ? 'Queue offline'
+                    : 'Queue for cloud'}
               </button>
             </div>
 
             {reportSavedBanner && (
-              <div className="flex items-center gap-1.5 rounded-lg border border-emerald-500/40 bg-emerald-500/15 px-3 py-1.5 text-[11px] text-emerald-300">
-                <CheckCircle2 className="h-3.5 w-3.5" />
-                <span>
-                  Field report logged! Queued for Cloud Conflict Resolution & pushed to Local Mesh.
-                </span>
+              <div
+                role="status"
+                className="flex items-center gap-2 rounded-lg border border-safe/30 bg-safe-dim/60 px-3 py-2 text-xs text-ink-primary"
+              >
+                <CheckCircleIcon size={14} className="shrink-0 text-safe" />
+                <span>Report queued for Cloud reconciliation and relayed on local mesh</span>
               </div>
             )}
           </form>
-        </div>
+        </section>
 
-        {/* Offline Essential Emergency Protocols (Whiteboard: "Essential info -> CPR, protocols") */}
-        <div className="rounded-2xl border border-slate-800 bg-slate-900/80 p-4">
-          <div className="mb-2.5 flex items-center justify-between">
-            <h3 className="flex items-center gap-1.5 text-sm font-bold text-white">
-              <HeartPulse className="h-4 w-4 text-red-400" />
-              Downloaded Emergency Protocols
-            </h3>
-            <span className="rounded bg-emerald-500/15 px-2 py-0.5 font-mono text-[10px] font-semibold text-emerald-300">
-              CACHED OFFLINE
+        {/* Cached Emergency Protocols */}
+        <section className="rounded-xl border border-hairline bg-surface p-4">
+          <div className="mb-3 flex items-center justify-between">
+            <h3 className="text-sm font-semibold text-ink-primary">Emergency protocols</h3>
+            <span className="font-mono text-[11px] text-ink-muted">
+              {protocols.length} cached offline
             </span>
           </div>
 
-          <div className="space-y-2 max-h-[340px] overflow-y-auto pr-1">
+          <div className="max-h-[360px] divide-y divide-hairline overflow-y-auto rounded-lg border border-hairline bg-recessed">
             {protocols.map((proto) => {
               const expanded = expandedProtocolId === proto.id;
+              const sevColor =
+                proto.severity === 'CRITICAL'
+                  ? 'text-hazard'
+                  : proto.severity === 'HIGH'
+                    ? 'text-caution'
+                    : 'text-ink-muted';
+              const sevLabel =
+                proto.severity === 'CRITICAL'
+                  ? 'Critical'
+                  : proto.severity === 'HIGH'
+                    ? 'High'
+                    : 'Standard';
+
               return (
-                <div
-                  key={proto.id}
-                  className="overflow-hidden rounded-xl border border-slate-800 bg-slate-950/70"
-                >
+                <div key={proto.id}>
                   <button
+                    aria-expanded={expanded}
                     onClick={() => setExpandedProtocolId(expanded ? '' : proto.id)}
-                    className="flex w-full items-center justify-between gap-2 px-3 py-2.5 text-left"
+                    className="flex w-full items-center justify-between gap-2 px-3 py-3 text-left transition-colors duration-150 hover:bg-raised/60 sm:py-2.5"
                   >
-                    <div className="flex items-center gap-2">
-                      <BookOpen className="h-3.5 w-3.5 shrink-0 text-cyan-400" />
-                      <div>
-                        <div className="text-xs font-bold text-slate-100">{proto.title}</div>
-                        <div className="text-[10px] text-slate-400">{proto.category}</div>
+                    <div className="min-w-0">
+                      <div className="truncate text-xs font-medium text-ink-primary">
+                        {proto.title}
+                      </div>
+                      <div className="mt-0.5 text-[11px] text-ink-muted">
+                        {proto.category.charAt(0) + proto.category.slice(1).toLowerCase()}
                       </div>
                     </div>
-                    <div className="flex items-center gap-1.5">
-                      <span
-                        className={`rounded px-1.5 py-0.5 font-mono text-[9.5px] font-bold ${
-                          proto.severity === 'CRITICAL'
-                            ? 'bg-red-500/20 text-red-300'
-                            : proto.severity === 'HIGH'
-                              ? 'bg-amber-500/20 text-amber-300'
-                              : 'bg-slate-800 text-slate-300'
-                        }`}
-                      >
-                        {proto.severity}
-                      </span>
+                    <div className="flex shrink-0 items-center gap-2">
+                      <span className={`text-[11px] font-medium ${sevColor}`}>{sevLabel}</span>
                       {expanded ? (
-                        <ChevronUp className="h-4 w-4 text-slate-400" />
+                        <ChevronUpIcon size={14} className="text-ink-muted" />
                       ) : (
-                        <ChevronDown className="h-4 w-4 text-slate-400" />
+                        <ChevronDownIcon size={14} className="text-ink-muted" />
                       )}
                     </div>
                   </button>
 
                   {expanded && (
-                    <div className="border-t border-slate-800/80 px-3 py-2.5 text-[11px] text-slate-300">
-                      <p className="mb-2 text-slate-400">{proto.summary}</p>
-                      <ol className="list-decimal space-y-1 pl-4">
+                    <div className="border-t border-hairline bg-surface/60 px-3.5 py-3 text-xs text-ink-secondary">
+                      <p className="mb-2 text-ink-muted">{proto.summary}</p>
+                      <ol className="list-decimal space-y-1.5 pl-4 text-ink-primary">
                         {proto.steps.map((step, idx) => (
-                          <li key={idx} className="leading-snug">
+                          <li key={idx} className="leading-relaxed">
                             {step}
                           </li>
                         ))}
                       </ol>
                       {proto.warnings.length > 0 && (
-                        <div className="mt-2 rounded-lg border border-amber-500/30 bg-amber-500/10 p-2 text-[10.5px] text-amber-200">
-                          <div className="mb-0.5 flex items-center gap-1 font-bold text-amber-300">
-                            <AlertTriangle className="h-3 w-3" /> Critical Warnings
-                          </div>
-                          {proto.warnings.map((w, i) => (
-                            <div key={i}>• {w}</div>
-                          ))}
+                        <div className="mt-3 rounded-md border border-caution/30 bg-caution-dim/60 p-2.5 text-xs text-ink-primary">
+                          <div className="mb-1 font-medium text-caution">Critical warnings</div>
+                          <ul className="space-y-1 text-ink-secondary">
+                            {proto.warnings.map((w, i) => (
+                              <li key={i}>• {w}</li>
+                            ))}
+                          </ul>
                         </div>
                       )}
                       <button
@@ -613,9 +666,9 @@ export const FieldAssistantView: React.FC<FieldAssistantViewProps> = ({
                             `Walk me through "${proto.title}" step-by-step and tell me the safest camp to evacuate this casualty to.`
                           )
                         }
-                        className="mt-2 inline-flex items-center gap-1 text-[11px] font-semibold text-cyan-300 hover:underline"
+                        className="mt-3 text-xs font-medium text-accent transition-colors duration-150 hover:text-ink-primary"
                       >
-                        <ShieldAlert className="h-3 w-3" /> Ask Field AI + Find Evacuation Camp →
+                        Ask Field AI and find evacuation camp →
                       </button>
                     </div>
                   )}
@@ -623,11 +676,12 @@ export const FieldAssistantView: React.FC<FieldAssistantViewProps> = ({
               );
             })}
           </div>
-        </div>
+        </section>
       </div>
+
       <CameraCaptureModal
         open={cameraOpen}
-        title="Field Worker Multimodal Camera Capture"
+        title="Field camera capture"
         onClose={() => setCameraOpen(false)}
         onCapture={(dataUrl) => setAttachedImage(dataUrl)}
       />

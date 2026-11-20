@@ -1,15 +1,5 @@
-import React, { useState } from 'react';
-import {
-  CheckCircle2,
-  Cloud,
-  Cpu,
-  Database,
-  RefreshCw,
-  RotateCcw,
-  ShieldCheck,
-  Sliders,
-  X,
-} from 'lucide-react';
+import React, { useEffect, useState } from 'react';
+import { CheckIcon, RefreshIcon, RotateCcwIcon, XIcon } from './icons';
 import {
   FirebaseConfigValues,
   FirebaseRuntimeState,
@@ -53,23 +43,48 @@ export const FirebaseDiagnosticsModal: React.FC<FirebaseDiagnosticsModalProps> =
     appCheckDebugToken: stored?.appCheckDebugToken || 'true',
   });
   const [saving, setSaving] = useState(false);
+  const [formError, setFormError] = useState<string | null>(null);
+
+  useEffect(() => {
+    if (!open) return;
+    const onKeyDown = (e: KeyboardEvent) => {
+      if (e.key === 'Escape') onClose();
+    };
+    window.addEventListener('keydown', onKeyDown);
+    return () => window.removeEventListener('keydown', onKeyDown);
+  }, [open, onClose]);
 
   if (!open) return null;
 
   const handleSaveConfig = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!form.apiKey || !form.projectId || !form.appId) return;
+    if (!form.apiKey.trim() || !form.projectId.trim() || !form.appId.trim()) {
+      setFormError('Enter apiKey, projectId, and appId before connecting.');
+      return;
+    }
+    setFormError(null);
     setSaving(true);
-    saveStoredFirebaseConfig({
-      ...form,
-      authDomain: form.authDomain || `${form.projectId}.firebaseapp.com`,
-      storageBucket: form.storageBucket || `${form.projectId}.firebasestorage.app`,
-    });
-    await onReinitFirebase();
-    setSaving(false);
+    try {
+      saveStoredFirebaseConfig({
+        ...form,
+        apiKey: form.apiKey.trim(),
+        projectId: form.projectId.trim(),
+        appId: form.appId.trim(),
+        authDomain: form.authDomain || `${form.projectId.trim()}.firebaseapp.com`,
+        storageBucket: form.storageBucket || `${form.projectId.trim()}.firebasestorage.app`,
+      });
+      await onReinitFirebase();
+    } catch (err) {
+      setFormError(
+        err instanceof Error ? err.message : 'Unable to initialize Firebase with these values.'
+      );
+    } finally {
+      setSaving(false);
+    }
   };
 
   const handleClearConfig = async () => {
+    setFormError(null);
     saveStoredFirebaseConfig(null);
     setForm({
       apiKey: '',
@@ -85,202 +100,252 @@ export const FirebaseDiagnosticsModal: React.FC<FirebaseDiagnosticsModalProps> =
   };
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/75 p-4 backdrop-blur-sm">
-      <div className="flex max-h-[90vh] w-full max-w-4xl flex-col overflow-hidden rounded-2xl border border-slate-700 bg-slate-950 shadow-2xl">
-        {/* Modal Header */}
-        <div className="flex items-center justify-between border-b border-slate-800 bg-slate-900/90 px-5 py-3.5">
+    <div
+      role="dialog"
+      aria-modal="true"
+      aria-labelledby="diagnostics-modal-title"
+      onClick={(e) => {
+        if (e.target === e.currentTarget) onClose();
+      }}
+      className="fixed inset-0 z-50 flex items-center justify-center bg-black/75 p-4 backdrop-blur-sm"
+    >
+      <div className="flex max-h-[90vh] w-full max-w-4xl flex-col overflow-hidden rounded-xl border border-control bg-surface shadow-overlay">
+        {/* Header */}
+        <div className="flex items-center justify-between border-b border-hairline px-5 py-4">
           <div>
-            <h2 className="text-base font-bold text-white">
-              Firebase AI Logic · Hybrid Inference & Diagnostics
+            <h2 id="diagnostics-modal-title" className="text-[15px] font-semibold text-ink-primary">
+              Firebase AI Logic diagnostics
             </h2>
-            <p className="text-xs text-slate-400">
-              Runtime status for Gemini Nano 4, Cloud Gemini fallback, App Check, Firestore, Auth & Remote Config
+            <p className="mt-0.5 text-xs text-ink-secondary">
+              Runtime status for Gemini Nano 4, Cloud Gemini fallback, App Check, Firestore, Auth, and Remote Config
             </p>
           </div>
           <button
             onClick={onClose}
-            className="rounded-lg p-1.5 text-slate-400 hover:bg-slate-800 hover:text-white"
+            className="flex h-8 w-8 items-center justify-center rounded-md text-ink-muted transition-colors duration-150 hover:bg-raised hover:text-ink-primary"
+            aria-label="Close diagnostics"
           >
-            <X className="h-5 w-5" />
+            <XIcon size={18} />
           </button>
         </div>
 
         <div className="flex-1 space-y-5 overflow-y-auto p-5 text-xs">
-          {/* Status Cards Grid */}
-          <div className="grid grid-cols-1 gap-3 md:grid-cols-2">
-            {/* On-Device Chrome Nano 4 */}
-            <div className="rounded-xl border border-slate-800 bg-slate-900/80 p-3.5">
-              <div className="flex items-center justify-between">
-                <span className="flex items-center gap-1.5 font-bold text-white">
-                  <Cpu className="h-4 w-4 text-emerald-400" /> On-Device Gemini Nano 4 (Chrome)
-                </span>
+          {/* Status Grid */}
+          <div className="grid grid-cols-1 gap-4 md:grid-cols-2">
+            {/* On-Device Nano 4 */}
+            <div className="rounded-lg border border-hairline bg-recessed p-4">
+              <div className="flex items-center justify-between gap-2">
+                <span className="font-medium text-ink-primary">On-device Gemini Nano 4</span>
                 <button
                   onClick={onRefreshNano}
-                  className="inline-flex items-center gap-1 rounded bg-slate-800 px-2 py-0.5 text-[10px] text-cyan-300 hover:bg-slate-700"
+                  className="btn-secondary inline-flex h-8 items-center gap-1.5 rounded-md px-2.5 text-xs font-medium text-ink-secondary sm:h-7"
                 >
-                  <RefreshCw className="h-3 w-3" /> Re-check
+                  <RefreshIcon size={12} />
+                  <span>Re-check</span>
                 </button>
               </div>
-              <div className="mt-1.5 font-mono text-[11px] font-bold text-emerald-300">
-                Status: {nanoStatus.availability.toUpperCase()}
+              <div className="mt-2 flex items-center gap-2 font-mono text-xs text-ink-primary">
+                <span
+                  className={`h-2 w-2 rounded-full ${
+                    nanoStatus.availability === 'available'
+                      ? 'bg-safe'
+                      : nanoStatus.availability === 'downloadable'
+                        ? 'bg-accent'
+                        : 'bg-caution'
+                  }`}
+                />
+                <span>{nanoStatus.availability}</span>
               </div>
-              <p className="mt-1 text-[11px] text-slate-400">{nanoStatus.detail}</p>
+              <p className="mt-2 leading-relaxed text-ink-secondary">{nanoStatus.detail}</p>
             </div>
 
             {/* Firebase Cloud & App Check */}
-            <div className="rounded-xl border border-slate-800 bg-slate-900/80 p-3.5">
-              <div className="flex items-center justify-between">
-                <span className="flex items-center gap-1.5 font-bold text-white">
-                  <ShieldCheck className="h-4 w-4 text-violet-400" /> Firebase Project & App Check
-                </span>
-                <span
-                  className={`rounded px-2 py-0.5 font-mono text-[10px] font-bold ${
-                    firebaseState.configured
-                      ? 'bg-emerald-500/20 text-emerald-300'
-                      : 'bg-amber-500/20 text-amber-300'
-                  }`}
-                >
-                  {firebaseState.configured ? 'CONNECTED' : 'LOCAL SANDBOX'}
+            <div className="rounded-lg border border-hairline bg-recessed p-4">
+              <div className="flex items-center justify-between gap-2">
+                <span className="font-medium text-ink-primary">Firebase project and App Check</span>
+                <span className="inline-flex items-center gap-1.5 text-xs font-medium text-ink-secondary">
+                  <span
+                    className={`h-1.5 w-1.5 rounded-full ${
+                      firebaseState.configured ? 'bg-safe' : 'bg-caution'
+                    }`}
+                  />
+                  {firebaseState.configured ? 'Connected' : 'Local sandbox'}
                 </span>
               </div>
-              <div className="mt-1.5 space-y-1 font-mono text-[11px] text-slate-300">
-                <div>Project: {firebaseState.projectId || 'Not configured'}</div>
-                <div>
-                  App Check: {firebaseState.appCheckActive ? 'Active' : 'Inactive'}{' '}
-                  {firebaseState.appCheckDebugMode ? '(Debug Token Enabled)' : ''}
+              <dl className="mt-2.5 space-y-1.5 font-mono text-[11px]">
+                <div className="flex items-center justify-between gap-2">
+                  <dt className="text-ink-muted">Project</dt>
+                  <dd className="truncate text-ink-primary">
+                    {firebaseState.projectId || 'Not configured'}
+                  </dd>
                 </div>
-                <div>
-                  Auth UID: {firebaseState.user ? firebaseState.user.uid.slice(0, 14) + '…' : 'Offline/Guest'}
+                <div className="flex items-center justify-between gap-2">
+                  <dt className="text-ink-muted">App Check</dt>
+                  <dd className="text-ink-primary">
+                    {firebaseState.appCheckActive ? 'Active' : 'Inactive'}
+                    {firebaseState.appCheckDebugMode ? ' (debug token)' : ''}
+                  </dd>
                 </div>
-              </div>
+                <div className="flex items-center justify-between gap-2">
+                  <dt className="text-ink-muted">Auth UID</dt>
+                  <dd className="text-ink-primary">
+                    {firebaseState.user ? `${firebaseState.user.uid.slice(0, 14)}…` : 'Offline guest'}
+                  </dd>
+                </div>
+              </dl>
             </div>
 
-            {/* Remote Config Live Values */}
-            <div className="rounded-xl border border-slate-800 bg-slate-900/80 p-3.5">
-              <div className="flex items-center gap-1.5 font-bold text-white">
-                <Sliders className="h-4 w-4 text-cyan-400" /> Firebase Remote Config Parameters
-              </div>
-              <div className="mt-2 grid grid-cols-2 gap-1.5 font-mono text-[10.5px] text-slate-300">
-                <div>cloud_model_name:</div>
-                <div className="text-cyan-300">{firebaseState.remoteParams.cloudModelName}</div>
-                <div>default_inference_mode:</div>
-                <div className="text-cyan-300">{firebaseState.remoteParams.defaultInferenceMode}</div>
-                <div>danger_weight:</div>
-                <div className="text-cyan-300">{firebaseState.remoteParams.dangerWeight}</div>
-                <div>mesh_base_cycle_sec:</div>
-                <div className="text-cyan-300">{firebaseState.remoteParams.meshBaseCycleSec}s</div>
-              </div>
+            {/* Remote Config */}
+            <div className="rounded-lg border border-hairline bg-recessed p-4">
+              <div className="font-medium text-ink-primary">Firebase Remote Config</div>
+              <dl className="mt-2.5 space-y-1.5 font-mono text-[11px]">
+                <div className="flex items-center justify-between gap-2">
+                  <dt className="text-ink-muted">cloud_model_name</dt>
+                  <dd className="text-ink-primary">{firebaseState.remoteParams.cloudModelName}</dd>
+                </div>
+                <div className="flex items-center justify-between gap-2">
+                  <dt className="text-ink-muted">default_inference_mode</dt>
+                  <dd className="text-ink-primary">
+                    {firebaseState.remoteParams.defaultInferenceMode}
+                  </dd>
+                </div>
+                <div className="flex items-center justify-between gap-2">
+                  <dt className="text-ink-muted">danger_weight</dt>
+                  <dd className="tabular text-ink-primary">
+                    {firebaseState.remoteParams.dangerWeight}
+                  </dd>
+                </div>
+                <div className="flex items-center justify-between gap-2">
+                  <dt className="text-ink-muted">mesh_base_cycle_sec</dt>
+                  <dd className="tabular text-ink-primary">
+                    {firebaseState.remoteParams.meshBaseCycleSec} s
+                  </dd>
+                </div>
+              </dl>
             </div>
 
             {/* Firestore Persistence */}
-            <div className="rounded-xl border border-slate-800 bg-slate-900/80 p-3.5">
-              <div className="flex items-center gap-1.5 font-bold text-white">
-                <Database className="h-4 w-4 text-emerald-400" /> Firestore Offline Persistence
-              </div>
-              <p className="mt-1.5 text-[11px] text-slate-400">
-                Configured with <code className="text-cyan-300">persistentLocalCache</code> +{' '}
-                <code className="text-cyan-300">persistentMultipleTabManager</code> alongside an
-                explicit Pre-Departure Field Snapshot in IndexedDB/LocalStorage for zero-signal
-                field deployments.
+            <div className="rounded-lg border border-hairline bg-recessed p-4">
+              <div className="font-medium text-ink-primary">Firestore offline persistence</div>
+              <p className="mt-2 leading-relaxed text-ink-secondary">
+                Configured with{' '}
+                <code className="font-mono text-ink-primary">persistentLocalCache</code> and{' '}
+                <code className="font-mono text-ink-primary">persistentMultipleTabManager</code>{' '}
+                paired with the pre-departure snapshot in local storage.
               </p>
               <button
                 onClick={onResetDemoData}
-                className="mt-2.5 inline-flex items-center gap-1.5 rounded-lg border border-slate-700 bg-slate-950 px-2.5 py-1 text-[11px] text-slate-300 hover:border-red-500/50 hover:text-red-300"
+                className="btn-secondary mt-3 inline-flex h-9 items-center gap-1.5 rounded-md px-3 text-xs font-medium text-ink-secondary sm:h-8"
               >
-                <RotateCcw className="h-3 w-3" /> Reset Scenario to Initial Demo State
+                <RotateCcwIcon size={14} className="text-ink-muted" />
+                <span>Reset demo scenario</span>
               </button>
             </div>
           </div>
 
-          {/* Runtime Firebase Config Override Form */}
-          <div className="rounded-xl border border-slate-800 bg-slate-900/60 p-4">
+          {/* Runtime Firebase Override Form */}
+          <div className="rounded-lg border border-hairline bg-recessed p-4">
             <div className="mb-2 flex items-center justify-between">
-              <h3 className="flex items-center gap-1.5 font-bold text-white">
-                <Cloud className="h-4 w-4 text-cyan-400" />
-                Connect Your Firebase Project (Runtime Config or .env)
+              <h3 className="font-medium text-ink-primary">
+                Connect Firebase project (runtime config or .env)
               </h3>
               {stored && (
                 <button
                   onClick={handleClearConfig}
-                  className="text-[11px] text-red-400 hover:underline"
+                  className="text-xs font-medium text-hazard transition-colors duration-150 hover:text-ink-primary"
                 >
-                  Clear Stored Config
+                  Clear stored config
                 </button>
               )}
             </div>
-            <p className="mb-3 text-[11px] text-slate-400">
-              Paste your Firebase Web App credentials here (or set <code className="text-cyan-300">.env</code>) to activate live Cloud Gemini fallback, Firestore sync, Auth, Remote Config, and App Check debug tokens.
+            <p className="mb-3 text-ink-secondary">
+              Enter your Firebase Web App credentials to enable live Cloud Gemini fallback, Firestore sync, Auth, Remote Config, and App Check debug tokens.
             </p>
+            {formError && (
+              <div
+                role="alert"
+                className="mb-3 rounded-md border border-hazard/35 bg-hazard-dim/70 px-3 py-2 text-xs text-ink-primary"
+              >
+                {formError}
+              </div>
+            )}
             <form onSubmit={handleSaveConfig} className="grid grid-cols-1 gap-2 sm:grid-cols-3">
               <input
                 type="text"
+                aria-label="Firebase API key"
                 placeholder="apiKey *"
                 value={form.apiKey}
                 onChange={(e) => setForm({ ...form, apiKey: e.target.value })}
-                className="rounded-lg border border-slate-700 bg-slate-950 px-2.5 py-1.5 font-mono text-[11px] text-white"
+                className="h-10 rounded-md border border-control bg-surface px-3 font-mono text-base text-ink-primary placeholder:text-ink-muted sm:h-9 sm:text-xs"
               />
               <input
                 type="text"
+                aria-label="Firebase Project ID"
                 placeholder="projectId *"
                 value={form.projectId}
                 onChange={(e) => setForm({ ...form, projectId: e.target.value })}
-                className="rounded-lg border border-slate-700 bg-slate-950 px-2.5 py-1.5 font-mono text-[11px] text-white"
+                className="h-10 rounded-md border border-control bg-surface px-3 font-mono text-base text-ink-primary placeholder:text-ink-muted sm:h-9 sm:text-xs"
               />
               <input
                 type="text"
+                aria-label="Firebase App ID"
                 placeholder="appId *"
                 value={form.appId}
                 onChange={(e) => setForm({ ...form, appId: e.target.value })}
-                className="rounded-lg border border-slate-700 bg-slate-950 px-2.5 py-1.5 font-mono text-[11px] text-white"
+                className="h-10 rounded-md border border-control bg-surface px-3 font-mono text-base text-ink-primary placeholder:text-ink-muted sm:h-9 sm:text-xs"
               />
               <input
                 type="text"
-                placeholder="App Check Debug Token (true or UUID)"
+                aria-label="App Check debug token"
+                placeholder="App Check debug token"
                 value={form.appCheckDebugToken}
                 onChange={(e) => setForm({ ...form, appCheckDebugToken: e.target.value })}
-                className="rounded-lg border border-slate-700 bg-slate-950 px-2.5 py-1.5 font-mono text-[11px] text-white"
+                className="h-10 rounded-md border border-control bg-surface px-3 font-mono text-base text-ink-primary placeholder:text-ink-muted sm:h-9 sm:text-xs"
               />
               <input
                 type="text"
-                placeholder="reCAPTCHA Site Key (optional)"
+                aria-label="reCAPTCHA site key"
+                placeholder="reCAPTCHA site key (optional)"
                 value={form.recaptchaSiteKey}
                 onChange={(e) => setForm({ ...form, recaptchaSiteKey: e.target.value })}
-                className="rounded-lg border border-slate-700 bg-slate-950 px-2.5 py-1.5 font-mono text-[11px] text-white"
+                className="h-10 rounded-md border border-control bg-surface px-3 font-mono text-base text-ink-primary placeholder:text-ink-muted sm:h-9 sm:text-xs"
               />
               <button
                 type="submit"
-                disabled={saving || !form.apiKey || !form.projectId || !form.appId}
-                className="flex items-center justify-center gap-1.5 rounded-lg bg-cyan-600 px-3 py-1.5 font-bold text-white hover:bg-cyan-500 disabled:opacity-50"
+                disabled={saving}
+                className="btn-primary flex h-10 items-center justify-center gap-1.5 rounded-md px-3 text-xs font-medium disabled:opacity-50 sm:h-9"
               >
-                <CheckCircle2 className="h-3.5 w-3.5" />
-                <span>{saving ? 'Connecting...' : 'Save & Connect Firebase'}</span>
+                <CheckIcon size={14} />
+                <span>{saving ? 'Connecting...' : 'Save and connect'}</span>
               </button>
             </form>
           </div>
 
-          {/* Live Inference Telemetry Log */}
+          {/* Inference Telemetry Log */}
           <div>
-            <h3 className="mb-2 font-bold uppercase tracking-wider text-slate-400">
-              Live Firebase AI Logic Inference Telemetry ({telemetry.length} calls)
-            </h3>
+            <div className="mb-2 flex items-center justify-between">
+              <h3 className="font-medium text-ink-primary">Inference telemetry</h3>
+              <span className="tabular font-mono text-[11px] text-ink-muted">
+                {telemetry.length} calls
+              </span>
+            </div>
             {telemetry.length === 0 ? (
-              <p className="rounded-xl border border-slate-800 bg-slate-900/50 p-3 text-slate-400">
-                No AI calls recorded yet. Ask the Field Assistant, query the Map, count CCTV beds,
-                or run Conflict Resolution to see real-time ON_DEVICE vs IN_CLOUD telemetry.
+              <p className="rounded-lg border border-hairline bg-recessed p-4 text-ink-secondary">
+                No inference calls recorded yet. Query the map, ask Field AI, run CCTV bed counting, or reconcile conflicts to log live latency and routing.
               </p>
             ) : (
-              <div className="space-y-1.5 max-h-[190px] overflow-y-auto">
+              <div className="max-h-[200px] divide-y divide-hairline overflow-y-auto rounded-lg border border-hairline bg-recessed">
                 {telemetry.map((t) => (
                   <div
                     key={t.id}
-                    className="flex flex-wrap items-center justify-between gap-2 rounded-lg border border-slate-800 bg-slate-900/70 px-3 py-2"
+                    className="flex flex-wrap items-center justify-between gap-2 px-3 py-2.5"
                   >
                     <div className="flex items-center gap-2 font-mono text-[11px]">
-                      <span className="font-bold text-cyan-300">{t.taskType}</span>
-                      <span className="text-slate-500">mode={t.requestedMode}</span>
+                      <span className="font-medium text-ink-primary">{t.taskType}</span>
+                      <span className="text-ink-muted">{t.requestedMode}</span>
                       {t.multimodal && (
-                        <span className="rounded bg-violet-500/20 px-1.5 text-[9.5px] text-violet-300">
-                          IMAGE
+                        <span className="rounded border border-hairline bg-raised px-1.5 py-0.5 text-[11px] text-ink-secondary">
+                          Image
                         </span>
                       )}
                     </div>

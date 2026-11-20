@@ -212,11 +212,11 @@ function buildLocalFieldContext(params: {
     ? `RECOMMENDED SAFEST & SHORTEST ROUTE (distance × danger): ${routing.safestOptimalRoute.campName} (${routing.safestOptimalRoute.totalDistanceKm} km, ETA ${routing.safestOptimalRoute.etaMinutes} min, danger ${routing.safestOptimalRoute.avgDangerLevel}/10).` +
       (routing.pureShortestRoute &&
       routing.pureShortestRoute.campId !== routing.safestOptimalRoute.campId
-        ? ` WARNING: Raw shortest camp (${routing.pureShortestRoute.campName}, ${routing.pureShortestRoute.totalDistanceKm} km) crosses higher danger (${routing.pureShortestRoute.hazardsCrossed.join(', ') || 'elevated hazard'}).`
+        ? ` WARNING: Raw shortest camp (${routing.pureShortestRoute.campName}, ${routing.pureShortestRoute.totalDistanceKm} km) crosses higher danger (${routing.pureShortestRoute.hazardsCrossed.join(', ') || 'high-risk hazard'}).`
         : '')
     : 'No active camps with available beds found.';
 
-  const contextBlock = `YOU ARE CRISIS CONNECTION FIELD AI — an emergency humanitarian assistant for field aid workers operating in disaster zones.
+  const contextBlock = `YOU ARE CRISIS CONNECTION FIELD AI, an emergency humanitarian assistant for field aid workers operating in disaster zones.
 Answer concisely, clearly, and actionably using ONLY the downloaded database below. Always state camp bed counts, safety levels, hazard warnings, and step-by-step protocol actions when relevant.
 
 LOCAL AID CAMPS DATABASE:
@@ -271,17 +271,17 @@ function buildDeterministicLocalFallback(params: {
   }
 
   if (matchedProtocol) {
-    lines.push(`### 🩺 ${matchedProtocol.title} (${matchedProtocol.severity})`);
+    lines.push(`### Protocol: ${matchedProtocol.title} (${matchedProtocol.severity})`);
     lines.push(matchedProtocol.summary);
     lines.push('');
     matchedProtocol.steps.forEach((s, i) => lines.push(`${i + 1}. ${s}`));
     lines.push('');
-    lines.push(`**⚠️ Critical Warnings:** ${matchedProtocol.warnings.join(' • ')}`);
+    lines.push(`**Critical warnings:** ${matchedProtocol.warnings.join(' · ')}`);
     if (routing.safestOptimalRoute) {
       const destCamp = camps.find((c) => c.id === routing.safestOptimalRoute?.campId);
       lines.push('');
       lines.push(
-        `**Nearest Safe Evacuation Camp:** **${routing.safestOptimalRoute.campName}** — ${destCamp?.availableBeds ?? 0} open beds, Safety ${destCamp?.safetyLevel ?? '?'}/10, ${routing.safestOptimalRoute.totalDistanceKm} km (ETA ~${routing.safestOptimalRoute.etaMinutes} min).`
+        `**Nearest safe evacuation camp:** **${routing.safestOptimalRoute.campName}**: ${destCamp?.availableBeds ?? 0} open beds, safety ${destCamp?.safetyLevel ?? '?'}/10, ${routing.safestOptimalRoute.totalDistanceKm} km (ETA ~${routing.safestOptimalRoute.etaMinutes} min).`
       );
     }
     return lines.join('\n');
@@ -291,17 +291,17 @@ function buildDeterministicLocalFallback(params: {
   if (routing.safestOptimalRoute) {
     const best = camps.find((c) => c.id === routing.safestOptimalRoute!.campId)!;
     lines.push(
-      `### 🧭 Recommended Safest & Shortest Camp: **${best.name} (${best.code})**`
+      `### Recommended safest camp: **${best.name} (${best.code})**`
     );
     lines.push(
-      `- **Distance & ETA:** ${routing.safestOptimalRoute.totalDistanceKm} km (~${routing.safestOptimalRoute.etaMinutes} min)`
+      `- **Distance and ETA:** ${routing.safestOptimalRoute.totalDistanceKm} km (~${routing.safestOptimalRoute.etaMinutes} min)`
     );
     lines.push(
-      `- **Availability & Safety:** **${best.availableBeds}/${best.totalBeds} open beds** • Safety Level **${best.safetyLevel}/10** • Uncertainty **${best.uncertaintyScore}%**`
+      `- **Availability and safety:** **${best.availableBeds}/${best.totalBeds} open beds** · Safety **${best.safetyLevel}/10** · Uncertainty **${best.uncertaintyScore}%**`
     );
     lines.push(`- **Capabilities:** ${best.capabilities.join(', ')}`);
     lines.push(
-      `- **Route Weighted Score (\`distance × danger\`):** ${routing.safestOptimalRoute.weightedScore} (Avg danger ${routing.safestOptimalRoute.avgDangerLevel}/10)`
+      `- **Weighted route cost (\`distance × danger\`):** ${routing.safestOptimalRoute.weightedScore} (avg danger ${routing.safestOptimalRoute.avgDangerLevel}/10)`
     );
 
     if (
@@ -311,7 +311,7 @@ function buildDeterministicLocalFallback(params: {
       const shortCamp = camps.find((c) => c.id === routing.pureShortestRoute!.campId);
       lines.push('');
       lines.push(
-        `**⚠️ Hazard Avoidance Note:** Although **${routing.pureShortestRoute.campName}** is physically closer (${routing.pureShortestRoute.totalDistanceKm} km, ${shortCamp?.availableBeds ?? 0} beds), its direct corridor intersects high-danger hazards (${routing.pureShortestRoute.hazardsCrossed.join(', ') || 'compromised road'}, max danger ${routing.pureShortestRoute.maxDangerLevel}/10).`
+        `**Hazard avoidance note:** Although **${routing.pureShortestRoute.campName}** is physically closer (${routing.pureShortestRoute.totalDistanceKm} km, ${shortCamp?.availableBeds ?? 0} beds), its direct corridor intersects high-danger hazards (${routing.pureShortestRoute.hazardsCrossed.join(', ') || 'compromised road'}, max danger ${routing.pureShortestRoute.maxDangerLevel}/10).`
       );
     }
   } else {
@@ -322,7 +322,7 @@ function buildDeterministicLocalFallback(params: {
   if (destroyed.length > 0) {
     lines.push('');
     lines.push(
-      `**🚨 Destroyed / Offline Camps Excluded:** ${destroyed.map((c) => c.name).join(', ')}`
+      `**Destroyed / offline camps excluded:** ${destroyed.map((c) => c.name).join(', ')}`
     );
   }
 
@@ -564,7 +564,7 @@ Count empty/usable beds vs occupied beds carefully, check for structural damage,
       ...(!smoke && !damaged ? ['Clear overhead IR-optical sightline; minor shadow overlap'] : []),
     ],
     visualEvidence: damaged
-      ? `Detected collapsed roof beam across east wing of ${params.camp.name}. ${occupied} patients still inside; remaining cots compromised by debris — 0 safe usable beds.`
+      ? `Detected collapsed roof beam across east wing of ${params.camp.name}. ${occupied} patients still inside; remaining cots compromised by debris (0 safe usable beds).`
       : `Detected ${total} ward cots in ${params.camp.name}: ${occupied} occupied, ${usableOpen} open usable beds.${smoke ? ' Light smoke haze detected in NE corner increasing count uncertainty.' : ''}`,
     inferenceSource: 'LOCAL_FALLBACK_ENGINE',
     latencyMs: Math.round(performance.now() - start),
@@ -911,7 +911,7 @@ ${JSON.stringify(params.uncertaintyLogs.slice(0, 10), null, 2)}`;
     predictions,
     systemicPatterns: [
       'Overflow Cascade: Degradation of Valley Clinic Annex + blocked Hwy-4 Overpass is diverting 70% of incoming casualties toward St. Jude Field Hospital, accelerating its bed burn rate by 2.4x.',
-      'Telemetry Blind Spot: Camps with < 10h generator power show 3x higher uncertainty scores due to lost cloud uplinks — rely on adaptive 4–8s local mesh relay in Sectors 4 & 5.',
+      'Telemetry Blind Spot: Camps with < 10h generator power show 3x higher uncertainty scores due to lost cloud uplinks. Rely on adaptive 4–8s local mesh relay in Sectors 4 & 5.',
       'High-Ground Stability: Highland Ridge Shelter & Meridian Base HQ hold 68% of remaining safe bed capacity and 75% of potable water reserves.',
     ],
     baseReorganizationPlan: [

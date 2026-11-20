@@ -48,7 +48,7 @@ export function computeAdaptiveMeshCycle(params: {
     return {
       cycleSec: 4,
       regime: 'EMERGENCY_BURST',
-      reason: 'CRITICAL emergency/destroyed camp detected — accelerated 4s local mesh flood.',
+      reason: 'Critical emergency or destroyed camp detected: accelerated 4s local mesh flood.',
     };
   }
 
@@ -56,7 +56,7 @@ export function computeAdaptiveMeshCycle(params: {
     return {
       cycleSec: Math.max(6, Math.round(baseCycleSec * 0.55)),
       regime: 'DIVERGENCE_CATCHUP',
-      reason: `High DB uncertainty (${Math.round(avgUncertaintyPct)}%) or ${unsyncedReportCount} queued field updates — tightening sync cycle.`,
+      reason: `High DB uncertainty (${Math.round(avgUncertaintyPct)}%) or ${unsyncedReportCount} queued field updates: tightening sync cycle.`,
     };
   }
 
@@ -64,14 +64,14 @@ export function computeAdaptiveMeshCycle(params: {
     return {
       cycleSec: Math.min(30, Math.round(baseCycleSec * 1.65)),
       regime: 'BATTERY_SAVER',
-      reason: `Low field handset battery (${minPeerBatteryPct}%) — conserving radio duty cycle.`,
+      reason: `Low field handset battery (${minPeerBatteryPct}%): conserving radio duty cycle.`,
     };
   }
 
   return {
     cycleSec: baseCycleSec,
     regime: 'NORMAL_PATROL',
-    reason: 'Nominal sector state — standard peer gossip cadence (from Remote Config).',
+    reason: 'Nominal sector state: standard peer gossip cadence from Remote Config.',
   };
 }
 

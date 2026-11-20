@@ -1,18 +1,15 @@
 import React, { useEffect, useRef, useState } from 'react';
 import {
-  AlertTriangle,
-  Camera,
-  CheckCircle2,
-  Cloud,
-  CloudOff,
-  Eye,
-  GitMerge,
-  LineChart,
-  ShieldAlert,
-  Sparkles,
-  TrendingDown,
-  Upload,
-} from 'lucide-react';
+  CameraIcon,
+  CheckCircleIcon,
+  CloudIcon,
+  CloudOffIcon,
+  EyeIcon,
+  GitMergeIcon,
+  TrendingDownIcon,
+  UploadIcon,
+  XIcon,
+} from './icons';
 import {
   AidCamp,
   CctvBedAnalysisResult,
@@ -29,6 +26,7 @@ import {
 } from '../utils/cctvGenerator';
 import { InferenceBadge } from './InferenceBadge';
 import { CameraCaptureModal } from './CameraCaptureModal';
+import { UncertaintyMeter } from './UncertaintyMeter';
 
 interface CloudCommandViewProps {
   operatingMode: OperatingMode;
@@ -72,6 +70,7 @@ export const CloudCommandView: React.FC<CloudCommandViewProps> = ({
   const [committing, setCommitting] = useState(false);
   const [forecasting, setForecasting] = useState(false);
   const [cameraOpen, setCameraOpen] = useState(false);
+  const [cloudError, setCloudError] = useState<string | null>(null);
 
   const fileInputRef = useRef<HTMLInputElement>(null);
 
@@ -100,6 +99,7 @@ export const CloudCommandView: React.FC<CloudCommandViewProps> = ({
   const handleRunCctv = async () => {
     const img = customImage || generatedPreview;
     if (!img || analyzingCctv) return;
+    setCloudError(null);
     setAnalyzingCctv(true);
     try {
       await onAnalyzeCctv({
@@ -107,6 +107,12 @@ export const CloudCommandView: React.FC<CloudCommandViewProps> = ({
         imageDataUrl: img,
         presetHint: customImage ? undefined : selectedPreset,
       });
+    } catch (err) {
+      setCloudError(
+        err instanceof Error
+          ? `CCTV bed count failed: ${err.message}`
+          : 'CCTV bed count failed. Verify connectivity and retry.'
+      );
     } finally {
       setAnalyzingCctv(false);
     }
@@ -114,9 +120,16 @@ export const CloudCommandView: React.FC<CloudCommandViewProps> = ({
 
   const handleRunResolve = async () => {
     if (resolving) return;
+    setCloudError(null);
     setResolving(true);
     try {
       await onResolveConflicts();
+    } catch (err) {
+      setCloudError(
+        err instanceof Error
+          ? `Conflict reconciliation failed: ${err.message}`
+          : 'Conflict reconciliation failed. Retry when online.'
+      );
     } finally {
       setResolving(false);
     }
@@ -124,9 +137,16 @@ export const CloudCommandView: React.FC<CloudCommandViewProps> = ({
 
   const handleCommit = async () => {
     if (committing) return;
+    setCloudError(null);
     setCommitting(true);
     try {
       await onCommitResolution();
+    } catch (err) {
+      setCloudError(
+        err instanceof Error
+          ? `Commit failed: ${err.message}`
+          : 'Unable to commit reconciled records. Retry when online.'
+      );
     } finally {
       setCommitting(false);
     }
@@ -134,9 +154,16 @@ export const CloudCommandView: React.FC<CloudCommandViewProps> = ({
 
   const handleRunForecast = async () => {
     if (forecasting) return;
+    setCloudError(null);
     setForecasting(true);
     try {
       await onRunPatternForecast();
+    } catch (err) {
+      setCloudError(
+        err instanceof Error
+          ? `Forecast failed: ${err.message}`
+          : 'Cloud forecast failed. Retry when online.'
+      );
     } finally {
       setForecasting(false);
     }
@@ -146,58 +173,67 @@ export const CloudCommandView: React.FC<CloudCommandViewProps> = ({
 
   return (
     <div className="space-y-4">
-      {/* Offline Guard Banner */}
+      {/* Offline Guard Bar */}
       {isOffline && (
-        <div className="flex flex-wrap items-center justify-between gap-3 rounded-2xl border border-amber-500/40 bg-amber-950/35 px-4 py-3 text-xs">
-          <div className="flex items-center gap-2.5 text-amber-200">
-            <CloudOff className="h-5 w-5 text-amber-400" />
-            <div>
-              <strong className="text-amber-100">
-                Device is currently in IN-FIELD OFFLINE mode.
-              </strong>{' '}
-              Return to Base Camp (Online) to upload your {unresolvedReports.length} queued field
-              report(s) and execute Cloud Gemini Conflict Resolution, CCTV Bed Counting & Shortage
-              Forecasting.
-            </div>
+        <div className="flex flex-wrap items-center justify-between gap-3 rounded-xl border border-caution/30 bg-caution-dim/60 px-4 py-3 text-xs">
+          <div className="flex items-center gap-2.5 text-ink-primary">
+            <CloudOffIcon size={16} className="shrink-0 text-caution" />
+            <span>
+              Device is in Field offline mode. Reconnect to Base camp to upload{' '}
+              <span className="tabular font-mono">{unresolvedReports.length}</span> queued field
+              report(s) and run Cloud Gemini reconciliation.
+            </span>
           </div>
           <button
             onClick={onSwitchToOnline}
-            className="rounded-xl bg-emerald-600 px-3.5 py-2 font-bold text-white transition hover:bg-emerald-500"
+            className="btn-primary h-9 rounded-lg px-3.5 text-xs font-medium sm:h-8"
           >
-            Reconnect to Base Camp Cloud
+            Reconnect to Base camp
           </button>
         </div>
       )}
 
-      {/* Top Row: CCTV Sensory Bed Counter + Conflict Resolution Engine */}
+      {/* Inline Cloud Error Banner */}
+      {cloudError && (
+        <div
+          role="alert"
+          className="flex items-center justify-between gap-3 rounded-xl border border-hazard/35 bg-hazard-dim/70 px-4 py-3 text-xs text-ink-primary"
+        >
+          <span>{cloudError}</span>
+          <button
+            onClick={() => setCloudError(null)}
+            aria-label="Dismiss error"
+            className="rounded p-1 text-ink-secondary hover:bg-ink-primary/10 hover:text-ink-primary"
+          >
+            <XIcon size={14} />
+          </button>
+        </div>
+      )}
+
+      {/* Top Row: Ward CCTV Monitor + Conflict Reconciliation Diff */}
       <div className="grid grid-cols-1 gap-4 xl:grid-cols-12">
-        {/* Panel 1: Multimodal Sensory CCTV Bed Counter */}
-        <div className="flex flex-col gap-3 rounded-2xl border border-slate-800 bg-slate-900/85 p-4 xl:col-span-6">
+        {/* Panel 1: Ward CCTV / Photo Bed Counter */}
+        <section className="flex flex-col gap-3 rounded-xl border border-hairline bg-surface p-4 xl:col-span-6">
           <div className="flex items-start justify-between gap-2">
             <div>
-              <h2 className="flex items-center gap-2 text-sm font-bold text-white">
-                <Camera className="h-4 w-4 text-cyan-400" />
-                Sensory Input: Cloud CCTV / Ward Photo Bed Counter
-              </h2>
-              <p className="mt-0.5 text-[11px] text-slate-400">
-                Firebase AI Logic <code className="text-violet-300">ONLY_IN_CLOUD</code> multimodal
-                vision counts beds, detects structural damage & quantifies visual uncertainty.
+              <h2 className="text-sm font-semibold text-ink-primary">Ward CCTV bed counter</h2>
+              <p className="mt-0.5 text-xs text-ink-muted">
+                Firebase AI Logic <code className="font-mono text-ink-secondary">ONLY_IN_CLOUD</code>{' '}
+                vision counts open cots, structural damage, and visual uncertainty
               </p>
             </div>
-            <span className="rounded bg-violet-500/20 px-2 py-0.5 font-mono text-[10px] font-bold text-violet-300">
-              MULTIMODAL
-            </span>
+            <span className="shrink-0 font-mono text-[11px] text-ink-muted">Multimodal</span>
           </div>
 
-          {/* Preset selector + Upload real photo */}
           <div className="flex flex-wrap items-center gap-2">
             <select
+              aria-label="Select ward CCTV feed"
               value={selectedPresetId}
               onChange={(e) => {
                 setCustomImage(null);
                 setSelectedPresetId(e.target.value);
               }}
-              className="flex-1 min-w-[200px] rounded-xl border border-slate-700 bg-slate-950 px-3 py-2 text-xs text-white"
+              className="h-10 min-w-[200px] flex-1 rounded-lg border border-control bg-recessed px-3 text-base text-ink-primary sm:h-9 sm:text-xs"
             >
               {SAMPLE_CCTV_PRESETS.map((p) => (
                 <option key={p.id} value={p.id}>
@@ -215,44 +251,44 @@ export const CloudCommandView: React.FC<CloudCommandViewProps> = ({
             />
             <button
               onClick={() => fileInputRef.current?.click()}
-              className="flex items-center gap-1.5 rounded-xl border border-slate-700 bg-slate-950 px-3 py-2 text-xs font-semibold text-slate-200 hover:border-cyan-500/50"
+              className="btn-secondary flex h-10 items-center gap-1.5 rounded-lg px-3 text-xs font-medium sm:h-9"
             >
-              <Upload className="h-3.5 w-3.5 text-cyan-400" />
-              <span>Upload Photo</span>
+              <UploadIcon size={14} className="text-ink-muted" />
+              <span>Upload</span>
             </button>
             <button
               onClick={() => setCameraOpen(true)}
-              className="flex items-center gap-1.5 rounded-xl border border-slate-700 bg-slate-950 px-3 py-2 text-xs font-semibold text-slate-200 hover:border-cyan-500/50"
+              className="btn-secondary flex h-10 items-center gap-1.5 rounded-lg px-3 text-xs font-medium sm:h-9"
             >
-              <Camera className="h-3.5 w-3.5 text-emerald-400" />
-              <span>Live Cam</span>
+              <CameraIcon size={14} className="text-ink-muted" />
+              <span>Live cam</span>
             </button>
           </div>
 
           {customImage && (
             <div className="flex items-center gap-2 text-xs">
-              <span className="text-slate-400">Assign photo to camp:</span>
+              <span className="text-ink-secondary">Assign photo to camp</span>
               <select
                 value={customCampId}
                 onChange={(e) => setCustomCampId(e.target.value)}
-                className="rounded-lg border border-slate-700 bg-slate-950 px-2 py-1 text-xs text-white"
+                className="h-9 rounded-md border border-control bg-recessed px-2 text-base text-ink-primary sm:h-8 sm:text-xs"
               >
                 {camps.map((c) => (
                   <option key={c.id} value={c.id}>
-                    {c.code} — {c.name}
+                    {c.code}: {c.name}
                   </option>
                 ))}
               </select>
             </div>
           )}
 
-          {/* Image Preview */}
-          <div className="relative overflow-hidden rounded-xl border border-slate-800 bg-black">
+          {/* Monitor Viewport */}
+          <div className="relative overflow-hidden rounded-lg border border-control bg-[#0c0d0c]">
             {(customImage || generatedPreview) && (
               <img
                 src={customImage || generatedPreview}
-                alt="Ward CCTV Feed"
-                className="h-[225px] w-full object-contain"
+                alt={`Ward CCTV feed for ${selectedPreset.label}`}
+                className="aspect-[720/420] w-full object-contain sm:h-[232px] sm:aspect-auto"
               />
             )}
           </div>
@@ -260,29 +296,26 @@ export const CloudCommandView: React.FC<CloudCommandViewProps> = ({
           <button
             onClick={handleRunCctv}
             disabled={analyzingCctv || isOffline}
-            className="flex w-full items-center justify-center gap-2 rounded-xl bg-gradient-to-r from-violet-600 to-cyan-600 py-2.5 text-xs font-bold text-white shadow-lg shadow-violet-950/40 transition hover:brightness-110 disabled:opacity-50"
+            className="btn-primary mt-auto flex h-10 w-full items-center justify-center gap-2 rounded-lg text-xs font-medium disabled:opacity-50 sm:h-9"
           >
-            <Eye className="h-4 w-4" />
+            <EyeIcon size={14} />
             <span>
-              {analyzingCctv
-                ? 'Analyzing CCTV Feed via Cloud Gemini...'
-                : 'Count Beds & Assess Hazards with Cloud Gemini'}
+              {analyzingCctv ? 'Analyzing CCTV feed...' : 'Count beds and assess hazards'}
             </span>
           </button>
 
-          {/* Latest CCTV Readings */}
           {cctvReadings.length > 0 && (
-            <div className="space-y-2">
+            <div className="space-y-3">
               {cctvReadings.slice(0, 2).map((reading, i) => {
                 const camp = camps.find((c) => c.id === reading.campId);
                 return (
                   <div
                     key={`${reading.campId}-${i}`}
-                    className="rounded-xl border border-cyan-500/30 bg-slate-950/90 p-3 text-xs"
+                    className="rounded-lg border border-hairline bg-recessed p-3 text-xs"
                   >
                     <div className="flex flex-wrap items-center justify-between gap-2">
-                      <span className="font-bold text-white">
-                        {camp?.name ?? reading.campId} · Sensory Output
+                      <span className="font-medium text-ink-primary">
+                        {camp?.name ?? reading.campId}
                       </span>
                       <InferenceBadge
                         source={reading.inferenceSource}
@@ -290,158 +323,164 @@ export const CloudCommandView: React.FC<CloudCommandViewProps> = ({
                         compact
                       />
                     </div>
-                    <div className="mt-2 grid grid-cols-4 gap-2 text-center font-mono text-[11px]">
-                      <div className="rounded-lg bg-slate-900 p-1.5">
-                        <div className="text-[9.5px] text-slate-400">Open Beds</div>
-                        <div className="font-bold text-emerald-300">{reading.availableBeds}</div>
+                    <div className="mt-2.5 grid grid-cols-2 divide-x divide-hairline rounded-md border border-hairline bg-surface sm:grid-cols-4">
+                      <div className="px-2.5 py-2">
+                        <div className="text-[11px] text-ink-muted">Open</div>
+                        <div className="tabular mt-0.5 font-mono text-sm font-medium text-safe">
+                          {reading.availableBeds}
+                        </div>
                       </div>
-                      <div className="rounded-lg bg-slate-900 p-1.5">
-                        <div className="text-[9.5px] text-slate-400">Occupied</div>
-                        <div className="font-bold text-amber-300">{reading.occupiedBeds}</div>
+                      <div className="px-2.5 py-2">
+                        <div className="text-[11px] text-ink-muted">Occupied</div>
+                        <div className="tabular mt-0.5 font-mono text-sm font-medium text-ink-primary">
+                          {reading.occupiedBeds}
+                        </div>
                       </div>
-                      <div className="rounded-lg bg-slate-900 p-1.5">
-                        <div className="text-[9.5px] text-slate-400">Status</div>
-                        <div className="font-bold text-cyan-300">{reading.structuralStatus}</div>
+                      <div className="px-2.5 py-2">
+                        <div className="text-[11px] text-ink-muted">Status</div>
+                        <div className="mt-0.5 text-xs font-medium text-ink-primary">
+                          {reading.structuralStatus.charAt(0) +
+                            reading.structuralStatus.slice(1).toLowerCase()}
+                        </div>
                       </div>
-                      <div className="rounded-lg bg-slate-900 p-1.5">
-                        <div className="text-[9.5px] text-slate-400">Uncertainty</div>
-                        <div className="font-bold text-red-300">{reading.uncertaintyPct}%</div>
+                      <div className="px-2.5 py-2">
+                        <div className="text-[11px] text-ink-muted">Uncertainty</div>
+                        <div className="mt-1">
+                          <UncertaintyMeter value={reading.uncertaintyPct} compact />
+                        </div>
                       </div>
                     </div>
-                    <p className="mt-2 text-[11px] text-slate-300">{reading.visualEvidence}</p>
-                    <div className="mt-1 text-[10px] text-amber-300/90">
-                      Uncertainty Factors: {reading.uncertaintyFactors.join(' · ')}
+                    <p className="mt-2.5 leading-relaxed text-ink-secondary">
+                      {reading.visualEvidence}
+                    </p>
+                    <div className="mt-1 text-[11px] text-ink-muted">
+                      Factors: {reading.uncertaintyFactors.join(' · ')}
                     </div>
                   </div>
                 );
               })}
             </div>
           )}
-        </div>
+        </section>
 
-        {/* Panel 2: Multi-Source Conflict Resolution Workbench */}
-        <div className="flex flex-col gap-3 rounded-2xl border border-slate-800 bg-slate-900/85 p-4 xl:col-span-6">
+        {/* Panel 2: Conflict Resolution Workbench */}
+        <section className="flex flex-col gap-3 rounded-xl border border-hairline bg-surface p-4 xl:col-span-6">
           <div className="flex items-start justify-between gap-2">
             <div>
-              <h2 className="flex items-center gap-2 text-sm font-bold text-white">
-                <GitMerge className="h-4 w-4 text-violet-400" />
-                Cloud AI Conflict Resolution & Uncertainty Reconciliation
+              <h2 className="text-sm font-semibold text-ink-primary">
+                Cloud conflict reconciliation
               </h2>
-              <p className="mt-0.5 text-[11px] text-slate-400">
-                Synthesizes previous DB state + {unresolvedReports.length} uploaded field/mesh
-                report(s) + {cctvReadings.length} CCTV reading(s).
+              <p className="mt-0.5 text-xs text-ink-muted">
+                Synthesizes prior DB state with{' '}
+                <span className="tabular font-mono text-ink-secondary">
+                  {unresolvedReports.length}
+                </span>{' '}
+                field report(s) and{' '}
+                <span className="tabular font-mono text-ink-secondary">{cctvReadings.length}</span>{' '}
+                CCTV reading(s)
               </p>
             </div>
-            <span className="rounded bg-amber-500/20 px-2 py-0.5 font-mono text-[10px] font-bold text-amber-300">
-              {unresolvedReports.length} QUEUED
+            <span className="tabular shrink-0 font-mono text-[11px] text-caution">
+              {unresolvedReports.length} queued
             </span>
           </div>
 
-          {/* Pending Field Reports Queue */}
-          <div className="space-y-2 max-h-[210px] overflow-y-auto pr-1">
+          <div className="max-h-[296px] flex-1 overflow-y-auto rounded-lg border border-hairline bg-recessed">
             {unresolvedReports.length === 0 ? (
-              <div className="rounded-xl border border-emerald-500/30 bg-emerald-950/20 p-4 text-center text-xs text-emerald-300">
-                <CheckCircle2 className="mx-auto mb-1 h-5 w-5" />
-                All uploaded field reports are reconciled with Cloud Firestore!
+              <div className="flex flex-col items-center justify-center gap-1.5 p-6 text-center text-xs text-ink-secondary">
+                <CheckCircleIcon size={18} className="text-safe" />
+                <span>All field reports reconciled with Cloud Firestore</span>
               </div>
             ) : (
-              unresolvedReports.map((rep) => {
-                const currentCamp = camps.find((c) => c.id === rep.campId);
-                const bedConflict =
-                  currentCamp && Math.abs(currentCamp.availableBeds - rep.reportedBeds) >= 3;
-                return (
-                  <div
-                    key={rep.id}
-                    className={`rounded-xl border p-2.5 text-xs ${
-                      bedConflict
-                        ? 'border-amber-500/40 bg-amber-950/20'
-                        : 'border-slate-800 bg-slate-950/75'
-                    }`}
-                  >
-                    <div className="flex flex-wrap items-center justify-between gap-1">
-                      <span className="font-bold text-white">
-                        {rep.campName}{' '}
-                        <span className="font-mono text-[10px] text-cyan-400">
-                          ({rep.workerName})
-                        </span>
-                      </span>
-                      <div className="flex items-center gap-1.5 font-mono text-[10px]">
+              <div className="divide-y divide-hairline">
+                {unresolvedReports.map((rep) => {
+                  const currentCamp = camps.find((c) => c.id === rep.campId);
+                  const bedConflict =
+                    currentCamp && Math.abs(currentCamp.availableBeds - rep.reportedBeds) >= 3;
+                  return (
+                    <div key={rep.id} className="p-3 text-xs">
+                      <div className="flex flex-wrap items-center justify-between gap-2">
+                        <div className="flex items-center gap-2">
+                          <span
+                            className={`h-1.5 w-1.5 rounded-full ${
+                              bedConflict ? 'bg-caution' : 'bg-ink-muted'
+                            }`}
+                          />
+                          <span className="font-medium text-ink-primary">{rep.campName}</span>
+                          <span className="font-mono text-[11px] text-ink-muted">
+                            {rep.workerName}
+                          </span>
+                        </div>
                         {bedConflict && (
-                          <span className="rounded bg-amber-500/20 px-1.5 py-0.5 font-bold text-amber-300">
-                            CONFLICT: DB {currentCamp?.availableBeds} vs {rep.reportedBeds} beds
+                          <span className="tabular font-mono text-[11px] text-caution">
+                            DB {currentCamp?.availableBeds} vs report {rep.reportedBeds} beds
                           </span>
                         )}
-                        <span className="rounded bg-slate-800 px-1.5 py-0.5 text-slate-300">
-                          {rep.reportedStatus}
+                      </div>
+                      <p className="mt-1 pl-3.5 leading-relaxed text-ink-secondary">{rep.notes}</p>
+                      <div className="mt-1.5 flex items-center justify-between pl-3.5 font-mono text-[11px] text-ink-muted">
+                        <span className="tabular">
+                          {rep.reportedBeds} beds · Safety {rep.reportedSafety}/10 ·{' '}
+                          {rep.reportedStatus.charAt(0) + rep.reportedStatus.slice(1).toLowerCase()}
+                        </span>
+                        <span className="tabular">
+                          {new Date(rep.timestamp).toLocaleTimeString()}
                         </span>
                       </div>
                     </div>
-                    <p className="mt-1 text-[11px] text-slate-300">{rep.notes}</p>
-                    <div className="mt-1 flex items-center justify-between font-mono text-[10px] text-slate-500">
-                      <span>
-                        Reported: {rep.reportedBeds} beds · Safety {rep.reportedSafety}/10
-                      </span>
-                      <span>{new Date(rep.timestamp).toLocaleTimeString()}</span>
-                    </div>
-                  </div>
-                );
-              })
+                  );
+                })}
+              </div>
             )}
           </div>
 
           <button
             onClick={handleRunResolve}
             disabled={
-              resolving || isOffline || (unresolvedReports.length === 0 && cctvReadings.length === 0)
+              resolving ||
+              isOffline ||
+              (unresolvedReports.length === 0 && cctvReadings.length === 0)
             }
-            className="flex w-full items-center justify-center gap-2 rounded-xl bg-violet-600 py-2.5 text-xs font-bold text-white shadow-lg shadow-violet-950/40 transition hover:bg-violet-500 disabled:opacity-50"
+            className="btn-primary mt-auto flex h-10 w-full items-center justify-center gap-2 rounded-lg text-xs font-medium disabled:opacity-50 sm:h-9"
           >
-            <Sparkles className="h-4 w-4" />
+            <GitMergeIcon size={14} />
             <span>
-              {resolving
-                ? 'Reconciling Conflicts with Cloud Gemini...'
-                : 'Resolve Conflicts & Log Uncertainty with Cloud Gemini'}
+              {resolving ? 'Reconciling conflicts...' : 'Reconcile conflicts with Cloud Gemini'}
             </span>
           </button>
 
-          {/* Proposed Reconciliation Output */}
           {lastResolution && (
-            <div className="space-y-2.5 rounded-xl border border-violet-500/40 bg-slate-950/90 p-3 text-xs">
+            <div className="space-y-3 rounded-lg border border-control bg-recessed p-3.5 text-xs">
               <div className="flex flex-wrap items-center justify-between gap-2">
-                <span className="font-bold text-violet-300">Reconciled Ground Truth Ready</span>
+                <span className="font-medium text-ink-primary">Reconciled ground truth</span>
                 <InferenceBadge
                   source={lastResolution.inferenceSource}
                   latencyMs={lastResolution.latencyMs}
                   compact
                 />
               </div>
-              <p className="text-[11px] text-slate-300">{lastResolution.summary}</p>
+              <p className="leading-relaxed text-ink-secondary">{lastResolution.summary}</p>
 
-              <div className="space-y-2 max-h-[210px] overflow-y-auto pr-1">
+              <div className="max-h-[220px] divide-y divide-hairline overflow-y-auto rounded-md border border-hairline bg-surface">
                 {lastResolution.reconciledCamps.map((u) => (
-                  <div
-                    key={u.campId}
-                    className="rounded-lg border border-slate-800 bg-slate-900/90 p-2.5"
-                  >
-                    <div className="flex flex-wrap items-center justify-between gap-1">
-                      <span className="font-bold text-white">{u.campName}</span>
-                      <div className="flex items-center gap-1.5 font-mono text-[10px]">
-                        <span className="text-slate-400">
-                          Beds: {u.previousBeds} →{' '}
-                          <strong className="text-emerald-300">{u.resolvedBeds}</strong>
+                  <div key={u.campId} className="p-3">
+                    <div className="flex flex-wrap items-center justify-between gap-2">
+                      <span className="font-medium text-ink-primary">{u.campName}</span>
+                      <div className="flex flex-wrap items-center gap-3 font-mono text-[11px]">
+                        <span className="tabular text-ink-muted">
+                          Beds {u.previousBeds} →{' '}
+                          <span className="text-safe">{u.resolvedBeds}</span>
                         </span>
-                        <span className="text-slate-400">
-                          Safe: {u.previousSafety} →{' '}
-                          <strong className="text-cyan-300">{u.resolvedSafety}/10</strong>
+                        <span className="tabular text-ink-muted">
+                          Safety {u.previousSafety} →{' '}
+                          <span className="text-ink-primary">{u.resolvedSafety}/10</span>
                         </span>
-                        <span className="rounded bg-amber-500/20 px-1.5 py-0.5 text-amber-300">
-                          Unc {u.uncertaintyPct}%
-                        </span>
+                        <UncertaintyMeter value={u.uncertaintyPct} compact />
                       </div>
                     </div>
-                    <p className="mt-1 text-[11px] text-slate-300">{u.conflictSummary}</p>
-                    <p className="mt-1 text-[10px] text-amber-200/80">
-                      Logged Uncertainty: {u.uncertaintyReason}
+                    <p className="mt-1.5 leading-relaxed text-ink-secondary">{u.conflictSummary}</p>
+                    <p className="mt-1 text-[11px] text-ink-muted">
+                      Logged uncertainty: {u.uncertaintyReason}
                     </p>
                   </div>
                 ))}
@@ -450,48 +489,48 @@ export const CloudCommandView: React.FC<CloudCommandViewProps> = ({
               <button
                 onClick={handleCommit}
                 disabled={committing || isOffline}
-                className="flex w-full items-center justify-center gap-1.5 rounded-xl bg-emerald-600 py-2 text-xs font-bold text-white transition hover:bg-emerald-500 disabled:opacity-50"
+                className="btn-primary flex h-10 w-full items-center justify-center gap-2 rounded-lg text-xs font-medium disabled:opacity-50 sm:h-9"
               >
-                <CheckCircle2 className="h-4 w-4" />
+                <CheckCircleIcon size={14} />
                 <span>
                   {committing
                     ? 'Committing to Firestore...'
-                    : 'Commit Reconciled Truth to Cloud DB & Broadcast to Field'}
+                    : 'Commit reconciled truth and broadcast'}
                 </span>
               </button>
             </div>
           )}
-        </div>
+        </section>
       </div>
 
-      {/* Bottom Row: Long-Context Pattern Detection & Shortage Forecasting + Uncertainty Ledger */}
+      {/* Bottom Row: Shortage Forecast + Uncertainty Audit Ledger */}
       <div className="grid grid-cols-1 gap-4 xl:grid-cols-12">
-        {/* Panel 3: Pattern Detection & Shortage Prediction */}
-        <div className="rounded-2xl border border-slate-800 bg-slate-900/85 p-4 xl:col-span-7">
-          <div className="mb-3 flex flex-wrap items-center justify-between gap-2">
+        <section className="rounded-xl border border-hairline bg-surface p-4 xl:col-span-7">
+          <div className="mb-3 flex flex-wrap items-center justify-between gap-3">
             <div>
-              <h2 className="flex items-center gap-2 text-sm font-bold text-white">
-                <LineChart className="h-4 w-4 text-emerald-400" />
-                Cloud Pattern Detection & Resource Shortage Forecasting
+              <h2 className="text-sm font-semibold text-ink-primary">
+                Pattern detection and shortage forecast
               </h2>
-              <p className="mt-0.5 text-[11px] text-slate-400">
-                Long-context reasoning across full camp Data History to predict shortages & organize bases.
+              <p className="mt-0.5 text-xs text-ink-muted">
+                Long-context analysis over multi-hour camp history to predict depletion and reallocate resources
               </p>
             </div>
             <button
               onClick={handleRunForecast}
               disabled={forecasting || isOffline}
-              className="flex items-center gap-1.5 rounded-xl border border-emerald-500/40 bg-emerald-500/15 px-3.5 py-2 text-xs font-bold text-emerald-200 transition hover:bg-emerald-500/25 disabled:opacity-50"
+              className="btn-secondary flex h-10 items-center gap-1.5 rounded-lg px-3.5 text-xs font-medium disabled:opacity-50 sm:h-9"
             >
-              <Cloud className="h-3.5 w-3.5" />
-              <span>{forecasting ? 'Analyzing History...' : 'Run Cloud Forecast'}</span>
+              <CloudIcon size={14} className="text-ink-muted" />
+              <span>{forecasting ? 'Analyzing history...' : 'Run cloud forecast'}</span>
             </button>
           </div>
 
           {lastForecast ? (
             <div className="space-y-3 text-xs">
-              <div className="flex flex-wrap items-center justify-between gap-2 rounded-xl border border-slate-800 bg-slate-950/80 p-3">
-                <p className="flex-1 text-slate-200">{lastForecast.executiveSummary}</p>
+              <div className="flex flex-wrap items-center justify-between gap-2 rounded-lg border border-hairline bg-recessed p-3">
+                <p className="flex-1 leading-relaxed text-ink-primary">
+                  {lastForecast.executiveSummary}
+                </p>
                 <InferenceBadge
                   source={lastForecast.inferenceSource}
                   latencyMs={lastForecast.latencyMs}
@@ -499,128 +538,109 @@ export const CloudCommandView: React.FC<CloudCommandViewProps> = ({
                 />
               </div>
 
-              <div className="grid grid-cols-1 gap-2 sm:grid-cols-2">
+              <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
                 {lastForecast.predictions.map((pred, idx) => (
                   <div
                     key={`${pred.campId}-${idx}`}
-                    className={`rounded-xl border p-3 ${
-                      pred.riskLevel === 'CRITICAL'
-                        ? 'border-red-500/40 bg-red-950/25'
-                        : pred.riskLevel === 'HIGH'
-                          ? 'border-amber-500/40 bg-amber-950/20'
-                          : 'border-slate-800 bg-slate-950/70'
-                    }`}
+                    className="rounded-lg border border-hairline bg-recessed p-3"
                   >
                     <div className="flex items-center justify-between gap-2">
-                      <span className="font-bold text-white">{pred.campName}</span>
-                      <span className="flex items-center gap-1 rounded bg-black/40 px-1.5 py-0.5 font-mono text-[10px] font-bold text-amber-300">
-                        <TrendingDown className="h-3 w-3 text-red-400" />
-                        ~{pred.hoursUntilDepletion}h left
+                      <span className="font-medium text-ink-primary">{pred.campName}</span>
+                      <span
+                        className={`tabular inline-flex items-center gap-1 font-mono text-[11px] font-medium ${
+                          pred.riskLevel === 'CRITICAL'
+                            ? 'text-hazard'
+                            : pred.riskLevel === 'HIGH'
+                              ? 'text-caution'
+                              : 'text-ink-secondary'
+                        }`}
+                      >
+                        <TrendingDownIcon size={12} />
+                        ~{pred.hoursUntilDepletion} h left
                       </span>
                     </div>
-                    <div className="mt-0.5 text-[11px] font-semibold text-cyan-300">
-                      {pred.resource} ({pred.riskLevel})
-                    </div>
-                    <p className="mt-1 text-[11px] text-slate-300">{pred.explanation}</p>
+                    <div className="mt-1 text-xs text-ink-secondary">{pred.resource}</div>
+                    <p className="mt-1.5 leading-relaxed text-ink-muted">{pred.explanation}</p>
                   </div>
                 ))}
               </div>
 
               <div className="grid grid-cols-1 gap-3 md:grid-cols-2">
-                <div className="rounded-xl border border-slate-800 bg-slate-950/70 p-3">
-                  <div className="mb-1.5 text-[11px] font-bold uppercase tracking-wider text-violet-300">
-                    Detected Systemic Patterns
-                  </div>
-                  <ul className="space-y-1.5 text-[11px] text-slate-300">
+                <div className="rounded-lg border border-hairline bg-recessed p-3">
+                  <div className="mb-2 text-xs font-medium text-ink-primary">Systemic patterns</div>
+                  <ul className="space-y-1.5 leading-relaxed text-ink-secondary">
                     {lastForecast.systemicPatterns.map((p, i) => (
                       <li key={i}>• {p}</li>
                     ))}
                   </ul>
                 </div>
-                <div className="rounded-xl border border-emerald-500/25 bg-emerald-950/15 p-3">
-                  <div className="mb-1.5 text-[11px] font-bold uppercase tracking-wider text-emerald-300">
-                    Base Reorganization Plan
+                <div className="rounded-lg border border-hairline bg-recessed p-3">
+                  <div className="mb-2 text-xs font-medium text-ink-primary">
+                    Base reorganization plan
                   </div>
-                  <ul className="space-y-1.5 text-[11px] text-emerald-100/90">
+                  <ol className="list-decimal space-y-1.5 pl-4 leading-relaxed text-ink-secondary">
                     {lastForecast.baseReorganizationPlan.map((step, i) => (
-                      <li key={i}>
-                        <strong>{i + 1}.</strong> {step}
-                      </li>
+                      <li key={i}>{step}</li>
                     ))}
-                  </ul>
+                  </ol>
                 </div>
               </div>
             </div>
           ) : (
-            <div className="rounded-xl border border-dashed border-slate-700 bg-slate-950/50 p-6 text-center text-xs text-slate-400">
-              Click <strong className="text-emerald-300">&quot;Run Cloud Forecast&quot;</strong> to feed
-              full multi-hour camp history into Cloud Gemini for shortage countdowns, overflow
-              cascade detection, and base camp reorganization recommendations.
+            <div className="rounded-lg border border-dashed border-control bg-recessed p-6 text-center text-xs text-ink-secondary">
+              Run Cloud forecast to analyze camp history for depletion countdowns, overflow cascades, and reallocation steps.
             </div>
           )}
-        </div>
+        </section>
 
-        {/* Panel 4: Logged Uncertainty Audit Ledger */}
-        <div className="rounded-2xl border border-slate-800 bg-slate-900/85 p-4 xl:col-span-5">
+        <section className="rounded-xl border border-hairline bg-surface p-4 xl:col-span-5">
           <div className="mb-3 flex items-center justify-between">
-            <h2 className="flex items-center gap-2 text-sm font-bold text-white">
-              <ShieldAlert className="h-4 w-4 text-amber-400" />
-              Logged Uncertainty Audit Trail
-            </h2>
-            <span className="font-mono text-[10px] text-slate-400">
+            <h2 className="text-sm font-semibold text-ink-primary">Uncertainty audit trail</h2>
+            <span className="tabular font-mono text-[11px] text-ink-muted">
               {uncertaintyLogs.filter((u) => u.status === 'OPEN').length} open
             </span>
           </div>
 
-          <div className="space-y-2 max-h-[340px] overflow-y-auto pr-1">
+          <div className="max-h-[360px] divide-y divide-hairline overflow-y-auto rounded-lg border border-hairline bg-recessed">
             {uncertaintyLogs.map((entry) => (
-              <div
-                key={entry.id}
-                className={`rounded-xl border p-3 text-xs ${
-                  entry.status === 'OPEN'
-                    ? 'border-amber-500/30 bg-amber-950/15'
-                    : 'border-slate-800 bg-slate-950/70'
-                }`}
-              >
-                <div className="flex items-center justify-between gap-2">
-                  <span className="flex items-center gap-1.5 font-bold text-white">
-                    {entry.status === 'OPEN' ? (
-                      <AlertTriangle className="h-3.5 w-3.5 text-amber-400" />
-                    ) : (
-                      <CheckCircle2 className="h-3.5 w-3.5 text-emerald-400" />
-                    )}
-                    {entry.campName || 'Sector Telemetry'}
+              <div key={entry.id} className="p-3 text-xs">
+                <div className="flex flex-wrap items-center justify-between gap-2">
+                  <span className="inline-flex items-center gap-2 font-medium text-ink-primary">
+                    <span
+                      className={`h-1.5 w-1.5 rounded-full ${
+                        entry.status === 'OPEN' ? 'bg-caution' : 'bg-safe'
+                      }`}
+                    />
+                    {entry.campName || 'Sector telemetry'}
                   </span>
-                  <span
-                    className={`rounded px-1.5 py-0.5 font-mono text-[10px] font-bold ${
-                      entry.uncertaintyPct >= 50
-                        ? 'bg-red-500/20 text-red-300'
-                        : entry.uncertaintyPct >= 25
-                          ? 'bg-amber-500/20 text-amber-300'
-                          : 'bg-emerald-500/20 text-emerald-300'
-                    }`}
-                  >
-                    {entry.uncertaintyPct}% UNCERTAINTY · {entry.status}
-                  </span>
+                  <div className="flex items-center gap-2">
+                    <UncertaintyMeter value={entry.uncertaintyPct} compact />
+                    <span className="text-[11px] text-ink-muted">
+                      {entry.status === 'OPEN' ? 'Open' : 'Resolved'}
+                    </span>
+                  </div>
                 </div>
-                <p className="mt-1 text-[11px] text-slate-300">{entry.reason}</p>
+                <p className="mt-1.5 pl-3.5 leading-relaxed text-ink-secondary">{entry.reason}</p>
                 {entry.resolutionNote && (
-                  <p className="mt-1 text-[10.5px] text-emerald-300">
-                    ✓ Resolved: {entry.resolutionNote}
+                  <p className="mt-1 pl-3.5 text-[11px] text-safe">
+                    Resolved: {entry.resolutionNote}
                   </p>
                 )}
-                <div className="mt-1.5 flex flex-wrap items-center justify-between gap-1 font-mono text-[9.5px] text-slate-500">
-                  <span>Sources: {entry.sourcesInvolved.join(', ')}</span>
-                  <span>{new Date(entry.timestamp).toLocaleTimeString()}</span>
+                <div className="mt-2 flex flex-wrap items-center justify-between gap-1 pl-3.5 font-mono text-[11px] text-ink-muted">
+                  <span>{entry.sourcesInvolved.join(', ')}</span>
+                  <span className="tabular">
+                    {new Date(entry.timestamp).toLocaleTimeString()}
+                  </span>
                 </div>
               </div>
             ))}
           </div>
-        </div>
+        </section>
       </div>
+
       <CameraCaptureModal
         open={cameraOpen}
-        title="Capture Live Ward / Field Photo for Cloud Bed Counter"
+        title="Ward camera capture"
         onClose={() => setCameraOpen(false)}
         onCapture={(dataUrl) => setCustomImage(dataUrl)}
       />

@@ -1,19 +1,14 @@
-import React, { useMemo, useState } from 'react';
+import React, { useEffect, useMemo, useState } from 'react';
 import {
-  AlertOctagon,
-  BedDouble,
-  Compass,
-  Crosshair,
-  Flame,
-  Navigation,
-  Radio,
-  Route,
-  Search,
-  Shield,
-  ShieldAlert,
-  Sparkles,
-  WifiOff,
-} from 'lucide-react';
+  AlertOctagonIcon,
+  CrosshairIcon,
+  FlameIcon,
+  NavigationIcon,
+  RadioIcon,
+  SearchIcon,
+  WifiOffIcon,
+  XIcon,
+} from './icons';
 import {
   AidCamp,
   Coordinates,
@@ -25,6 +20,8 @@ import {
 import { TACTICAL_MAP_EDGES, TACTICAL_MAP_NODES } from '../data/seedData';
 import { computeRouteToCamp, findBestCampRoutes } from '../services/pathfinding';
 import { InferenceBadge } from './InferenceBadge';
+import { UncertaintyMeter } from './UncertaintyMeter';
+import { FormattedText } from './FormattedText';
 
 interface TacticalMapViewProps {
   camps: AidCamp[];
@@ -46,26 +43,37 @@ interface TacticalMapViewProps {
   onOpenReportForCamp: (campId: string) => void;
 }
 
-const statusColors: Record<AidCamp['status'], { ring: string; fill: string; badge: string }> = {
+const statusMeta: Record<
+  AidCamp['status'],
+  { stroke: string; fill: string; dot: string; label: string; textTone: string }
+> = {
   ACTIVE: {
-    ring: '#10b981',
-    fill: '#064e3b',
-    badge: 'border-emerald-500/40 bg-emerald-500/15 text-emerald-300',
+    stroke: '#4cc38a',
+    fill: '#14241c',
+    dot: 'bg-safe',
+    label: 'Active',
+    textTone: 'text-safe',
   },
   OVERCROWDED: {
-    ring: '#f59e0b',
-    fill: '#78350f',
-    badge: 'border-amber-500/40 bg-amber-500/15 text-amber-300',
+    stroke: '#e2a43b',
+    fill: '#261e12',
+    dot: 'bg-caution',
+    label: 'Overcrowded',
+    textTone: 'text-caution',
   },
   DAMAGED: {
-    ring: '#f97316',
-    fill: '#7c2d12',
-    badge: 'border-orange-500/40 bg-orange-500/15 text-orange-300',
+    stroke: '#e2a43b',
+    fill: '#291c12',
+    dot: 'bg-caution',
+    label: 'Damaged',
+    textTone: 'text-caution',
   },
   DESTROYED: {
-    ring: '#ef4444',
-    fill: '#450a0a',
-    badge: 'border-red-500/50 bg-red-500/20 text-red-300',
+    stroke: '#e5484d',
+    fill: '#2b1416',
+    dot: 'bg-hazard',
+    label: 'Destroyed',
+    textTone: 'text-hazard',
   },
 };
 
@@ -87,6 +95,7 @@ export const TacticalMapView: React.FC<TacticalMapViewProps> = ({
   const [minBeds, setMinBeds] = useState<number>(1);
   const [showMeshRings, setShowMeshRings] = useState<boolean>(true);
   const [dropHazardMode, setDropHazardMode] = useState<boolean>(false);
+  const [confirmDestroyId, setConfirmDestroyId] = useState<string | null>(null);
   const [mapQuery, setMapQuery] = useState<string>('');
   const [mapAnswer, setMapAnswer] = useState<{
     text: string;
@@ -95,12 +104,30 @@ export const TacticalMapView: React.FC<TacticalMapViewProps> = ({
   } | null>(null);
   const [askingMap, setAskingMap] = useState<boolean>(false);
 
+  // Escape exits armed drop-hazard or destroy confirmation state
+  useEffect(() => {
+    if (!dropHazardMode && !confirmDestroyId) return;
+    const onKeyDown = (e: KeyboardEvent) => {
+      if (e.key === 'Escape') {
+        setDropHazardMode(false);
+        setConfirmDestroyId(null);
+      }
+    };
+    window.addEventListener('keydown', onKeyDown);
+    return () => window.removeEventListener('keydown', onKeyDown);
+  }, [dropHazardMode, confirmDestroyId]);
+
   const routing = useMemo(
     () => findBestCampRoutes(workerPos, camps, hazards, dangerWeight, minBeds),
     [workerPos, camps, hazards, dangerWeight, minBeds]
   );
 
   const selectedCamp = camps.find((c) => c.id === selectedCampId) ?? camps[0];
+
+  // Clear pending destroy confirmation whenever selected camp changes
+  useEffect(() => {
+    setConfirmDestroyId(null);
+  }, [selectedCamp?.id]);
 
   const routeToSelectedSafe = useMemo(
     () =>
@@ -126,10 +153,10 @@ export const TacticalMapView: React.FC<TacticalMapViewProps> = ({
   const handleSvgClick = (e: React.MouseEvent<SVGSVGElement>) => {
     const rect = e.currentTarget.getBoundingClientRect();
     const x = Math.round(((e.clientX - rect.left) / rect.width) * 1000);
-    const y = Math.round(((e.clientY - rect.top) / rect.height) * 600);
+    const y = Math.round(((e.clientY - rect.top) / rect.height) * 580);
     const clamped = {
-      x: Math.max(40, Math.min(960, x)),
-      y: Math.max(40, Math.min(560, y)),
+      x: Math.max(44, Math.min(956, x)),
+      y: Math.max(40, Math.min(540, y)),
     };
     if (dropHazardMode) {
       onAddHazardZone(clamped);
@@ -161,181 +188,335 @@ export const TacticalMapView: React.FC<TacticalMapViewProps> = ({
 
   const toPolyline = (pts: Coordinates[]) => pts.map((p) => `${p.x},${p.y}`).join(' ');
 
+  const getCampLabelOffset = (camp: AidCamp) => {
+    if (camp.id === 'camp-south' || camp.coords.y > 460) {
+      return { yOffset: 30, textY: 43 };
+    }
+    return { yOffset: -46, textY: -33 };
+  };
+
+  const getHazardLabelOffset = (hz: HazardZone) => {
+    if (hz.id === 'haz-3') {
+      return { dx: 34, dy: -36 };
+    }
+    if (hz.id === 'haz-2') {
+      return { dx: -24, dy: 20 };
+    }
+    return { dx: 0, dy: 20 };
+  };
+
+  const workerTagBelow = workerPos.y < 76;
+
+  // Compute real 6-hour bed depletion delta & latest onset event from camp.history
+  const bedHistoryStats = useMemo(() => {
+    if (!selectedCamp || selectedCamp.history.length < 2) return null;
+    const pts = selectedCamp.history.slice(-4);
+    const first = pts[0];
+    const latest = pts[pts.length - 1];
+    const delta = latest.availableBeds - first.availableBeds;
+    return { pts, delta, latestNote: latest.note };
+  }, [selectedCamp]);
+
   return (
     <div className="grid grid-cols-1 gap-4 xl:grid-cols-12">
-      {/* Left / Main Interactive Tactical Map */}
-      <div className="flex flex-col gap-3 xl:col-span-8">
-        {/* Local Map Quick Query Bar (Whiteboard: 'Locally access Map: e.g. Tell me where the closest aid camp is') */}
-        <div className="rounded-2xl border border-slate-800 bg-slate-900/80 p-3">
-          <div className="flex flex-wrap items-center gap-2">
-            <div className="relative flex-1 min-w-[240px]">
-              <Search className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-cyan-400" />
-              <input
-                type="text"
-                value={mapQuery}
-                onChange={(e) => setMapQuery(e.target.value)}
-                onKeyDown={(e) => e.key === 'Enter' && handleQuickMapAsk(mapQuery)}
-                placeholder='Ask local map AI: "Tell me where the closest safe aid camp is with available beds"'
-                className="w-full rounded-xl border border-slate-700 bg-slate-950/90 py-2 pl-9 pr-3 text-xs text-slate-100 placeholder-slate-500 focus:border-cyan-500 focus:outline-none"
-              />
-            </div>
-            <button
-              onClick={() =>
-                handleQuickMapAsk(
-                  mapQuery || 'Tell me where the closest safe aid camp is with available beds'
-                )
-              }
-              disabled={askingMap}
-              className="flex items-center gap-1.5 rounded-xl bg-gradient-to-r from-cyan-600 to-emerald-600 px-3.5 py-2 text-xs font-semibold text-white shadow-md shadow-cyan-950/50 transition hover:brightness-110 disabled:opacity-60"
-            >
-              <Sparkles className="h-3.5 w-3.5" />
-              <span>{askingMap ? 'Routing...' : 'Ask Local AI'}</span>
-            </button>
-          </div>
-          <div className="mt-2 flex flex-wrap items-center gap-1.5 text-[11px]">
-            <span className="text-slate-500">Quick field queries:</span>
-            {[
-              'Tell me where the closest safe aid camp is',
-              'Which camp has the most trauma kits and clean water?',
-              'Why should I avoid the direct route to Harbor Bridge?',
-            ].map((sample) => (
-              <button
-                key={sample}
-                onClick={() => handleQuickMapAsk(sample)}
-                className="rounded-full border border-slate-700/80 bg-slate-800/70 px-2.5 py-0.5 text-slate-300 transition hover:border-cyan-500/50 hover:text-cyan-200"
-              >
-                {sample}
-              </button>
-            ))}
-          </div>
-
-          {mapAnswer && (
-            <div className="mt-3 rounded-xl border border-cyan-500/30 bg-slate-950/90 p-3">
-              <div className="mb-1.5 flex flex-wrap items-center justify-between gap-2">
-                <span className="text-[11px] font-bold uppercase tracking-wider text-cyan-300">
-                  Local Map AI Recommendation
-                </span>
-                <InferenceBadge
-                  source={mapAnswer.inferenceSource}
-                  latencyMs={mapAnswer.latencyMs}
-                />
-              </div>
-              <p className="whitespace-pre-line text-xs leading-relaxed text-slate-200">
-                {mapAnswer.text}
-              </p>
-            </div>
-          )}
-        </div>
-
-        {/* Interactive Offline-Capable SVG Tactical Map */}
-        <div className="relative overflow-hidden rounded-2xl border border-slate-800 bg-slate-950 shadow-2xl">
-          {/* Top overlay bar */}
-          <div className="flex flex-wrap items-center justify-between gap-2 border-b border-slate-800/80 bg-slate-900/80 px-4 py-2 text-xs">
+      {/* Left 8 Columns: Sector Meridian Topographic Dispatch Map */}
+      <div className="flex flex-col gap-4 xl:col-span-8">
+        <section className="overflow-hidden rounded-xl border border-hairline bg-surface">
+          {/* Map Header Bar */}
+          <div className="flex flex-wrap items-center justify-between gap-3 border-b border-hairline px-4 py-3">
             <div className="flex items-center gap-2">
-              <Compass className="h-4 w-4 text-cyan-400" />
-              <span className="font-bold text-slate-100">
-                SECTOR MERIDIAN — OFFLINE TACTICAL MAP
-              </span>
+              <h2 className="text-sm font-semibold text-ink-primary">Sector Meridian</h2>
+              <span className="font-mono text-[11px] text-ink-muted">34.07°N 118.24°W</span>
               {operatingMode === 'FIELD_OFFLINE' && (
-                <span className="inline-flex items-center gap-1 rounded bg-amber-500/15 px-1.5 py-0.5 font-mono text-[10px] font-semibold text-amber-300">
-                  <WifiOff className="h-3 w-3" /> LOCAL CACHED MAP
+                <span className="inline-flex items-center gap-1 rounded border border-caution/30 bg-caution-dim/60 px-1.5 py-0.5 text-[11px] font-medium text-caution">
+                  <WifiOffIcon size={12} />
+                  Cached offline
                 </span>
               )}
             </div>
 
-            <div className="flex flex-wrap items-center gap-3 text-[11px] text-slate-400">
-              <label className="flex items-center gap-1.5 cursor-pointer">
+            <div className="flex flex-wrap items-center gap-3 text-xs text-ink-secondary">
+              <label className="flex cursor-pointer items-center gap-2">
                 <input
                   type="checkbox"
                   checked={showMeshRings}
                   onChange={(e) => setShowMeshRings(e.target.checked)}
-                  className="accent-cyan-500"
+                  className="instrument-check"
                 />
-                <span>Local Mesh Rings</span>
+                <span>Mesh range</span>
               </label>
-              <span className="text-slate-600">|</span>
+
               <button
                 onClick={() => setDropHazardMode((v) => !v)}
-                className={`inline-flex items-center gap-1 rounded-md border px-2 py-0.5 font-semibold transition ${
+                aria-pressed={dropHazardMode}
+                className={`inline-flex h-8 items-center gap-1.5 rounded-md border px-2.5 text-xs font-medium transition-colors duration-150 ease-instrument sm:h-7 ${
                   dropHazardMode
-                    ? 'animate-pulse border-red-500 bg-red-500/20 text-red-200'
-                    : 'border-slate-700 bg-slate-950 text-slate-300 hover:border-red-500/50 hover:text-red-200'
+                    ? 'border-hazard bg-hazard-dim text-ink-primary'
+                    : 'border-control bg-raised text-ink-secondary hover:bg-raised-hover hover:text-ink-primary'
                 }`}
               >
-                <Flame className="h-3 w-3 text-red-400" />
-                <span>{dropHazardMode ? 'Click Map to Drop Hazard!' : '+ Drop Hazard'}</span>
+                <FlameIcon size={13} className={dropHazardMode ? 'text-hazard' : 'text-ink-muted'} />
+                <span>{dropHazardMode ? 'Click map to place (Esc)' : 'Drop hazard'}</span>
               </button>
-              <span className="hidden items-center gap-1 text-cyan-300 sm:flex">
-                <Crosshair className="h-3.5 w-3.5" />
-                {dropHazardMode ? 'Placing hazard zone' : 'Click map to move worker'}
+
+              <span className="hidden items-center gap-1.5 text-ink-muted sm:inline-flex">
+                <CrosshairIcon size={13} />
+                <span>{dropHazardMode ? 'Placing hazard' : 'Click map to move unit'}</span>
               </span>
             </div>
           </div>
 
-          <div className="tactical-grid relative w-full">
+          {/* Docked Local Map AI Query Bar */}
+          <div className="border-b border-hairline bg-recessed/70 px-4 py-2.5">
+            <div className="flex flex-wrap items-center gap-2">
+              <div className="relative min-w-[240px] flex-1">
+                <SearchIcon
+                  size={15}
+                  className="pointer-events-none absolute left-3 top-1/2 -translate-y-1/2 text-ink-muted"
+                />
+                <input
+                  type="text"
+                  aria-label="Query local map AI"
+                  value={mapQuery}
+                  onChange={(e) => setMapQuery(e.target.value)}
+                  onKeyDown={(e) => e.key === 'Enter' && handleQuickMapAsk(mapQuery)}
+                  placeholder="Query local map AI for nearest safe camp, beds, or hazards"
+                  className="h-10 w-full rounded-lg border border-control bg-surface pl-9 pr-3 text-base text-ink-primary placeholder:text-ink-muted sm:h-9 sm:text-xs"
+                />
+              </div>
+              <button
+                onClick={() =>
+                  handleQuickMapAsk(
+                    mapQuery || 'Tell me where the closest safe aid camp is with available beds'
+                  )
+                }
+                disabled={askingMap}
+                className="btn-primary h-10 rounded-lg px-4 text-xs font-medium disabled:opacity-60 sm:h-9"
+              >
+                {askingMap ? 'Routing...' : 'Ask map AI'}
+              </button>
+            </div>
+
+            <div className="mt-2 flex flex-wrap items-center gap-x-3 gap-y-1 text-xs">
+              <span className="text-ink-muted">Prompts:</span>
+              {[
+                { label: 'Closest safe camp', query: 'Tell me where the closest safe aid camp is' },
+                {
+                  label: 'Most trauma kits and water',
+                  query: 'Which camp has the most trauma kits and clean water?',
+                },
+                {
+                  label: 'Why avoid Harbor Bridge direct route',
+                  query: 'Why should I avoid the direct route to Harbor Bridge?',
+                },
+              ].map((sample) => (
+                <button
+                  key={sample.label}
+                  onClick={() => handleQuickMapAsk(sample.query)}
+                  className="text-ink-secondary underline decoration-ink-muted/40 underline-offset-4 transition-colors duration-150 hover:text-ink-primary hover:decoration-ink-secondary"
+                >
+                  {sample.label}
+                </button>
+              ))}
+            </div>
+
+            {mapAnswer && (
+              <div className="mt-3 rounded-lg border border-hairline bg-surface p-3.5">
+                <div className="mb-2 flex flex-wrap items-center justify-between gap-2">
+                  <span className="text-xs font-medium text-ink-primary">
+                    Local map AI recommendation
+                  </span>
+                  <div className="flex items-center gap-2">
+                    <InferenceBadge
+                      source={mapAnswer.inferenceSource}
+                      latencyMs={mapAnswer.latencyMs}
+                      compact
+                    />
+                    <button
+                      onClick={() => setMapAnswer(null)}
+                      aria-label="Dismiss map recommendation"
+                      className="rounded p-1 text-ink-muted transition-colors duration-150 hover:bg-raised hover:text-ink-primary"
+                    >
+                      <XIcon size={13} />
+                    </button>
+                  </div>
+                </div>
+                <FormattedText text={mapAnswer.text} className="text-xs" />
+              </div>
+            )}
+          </div>
+
+          {/* Topographic SVG Dispatch Map Canvas */}
+          <div className="relative w-full bg-[#0e100f]">
             <svg
-              viewBox="0 0 1000 600"
+              viewBox="0 0 1000 580"
               onClick={handleSvgClick}
-              className="h-[430px] w-full cursor-crosshair select-none sm:h-[500px]"
+              role="img"
+              aria-label="Sector Meridian interactive tactical map"
+              className="aspect-[1000/580] w-full cursor-crosshair select-none lg:aspect-auto lg:h-[540px]"
             >
               <defs>
-                <radialGradient id="hazardGrad" cx="50%" cy="50%" r="50%">
-                  <stop offset="0%" stopColor="#ef4444" stopOpacity="0.34" />
-                  <stop offset="70%" stopColor="#ef4444" stopOpacity="0.12" />
-                  <stop offset="100%" stopColor="#ef4444" stopOpacity="0" />
-                </radialGradient>
-                <radialGradient id="meshGrad" cx="50%" cy="50%" r="50%">
-                  <stop offset="0%" stopColor="#06b6d4" stopOpacity="0.18" />
-                  <stop offset="100%" stopColor="#06b6d4" stopOpacity="0" />
-                </radialGradient>
+                <pattern
+                  id="hazardHatch"
+                  width="8"
+                  height="8"
+                  patternUnits="userSpaceOnUse"
+                  patternTransform="rotate(45)"
+                >
+                  <line
+                    x1="0"
+                    y1="0"
+                    x2="0"
+                    y2="8"
+                    stroke="#e5484d"
+                    strokeOpacity="0.28"
+                    strokeWidth="1.5"
+                  />
+                </pattern>
+                <pattern id="utmGrid" width="40" height="40" patternUnits="userSpaceOnUse">
+                  <path
+                    d="M 40 0 L 0 0 0 40"
+                    fill="none"
+                    stroke="#ededeb"
+                    strokeOpacity="0.035"
+                    strokeWidth="1"
+                  />
+                </pattern>
               </defs>
 
-              {/* Topographic contour lines for authentic crisis-zone cartography */}
-              <path
-                d="M 0,180 Q 220,120 420,210 T 1000,140"
+              <rect x="28" y="22" width="944" height="536" fill="url(#utmGrid)" />
+              <rect
+                x="28"
+                y="22"
+                width="944"
+                height="536"
                 fill="none"
-                stroke="#1e293b"
-                strokeWidth="1.5"
-                strokeDasharray="6 6"
-              />
-              <path
-                d="M 0,390 Q 300,320 560,410 T 1000,360"
-                fill="none"
-                stroke="#1e293b"
-                strokeWidth="1.5"
-                strokeDasharray="6 6"
-              />
-              {/* River / Canal feature */}
-              <path
-                d="M 380,600 C 440,480 465,410 500,330 C 535,250 610,180 710,0"
-                fill="none"
-                stroke="#0c4a6e"
-                strokeWidth="14"
-                strokeLinecap="round"
-                opacity="0.35"
-              />
-              <path
-                d="M 380,600 C 440,480 465,410 500,330 C 535,250 610,180 710,0"
-                fill="none"
-                stroke="#38bdf8"
-                strokeWidth="1.5"
-                strokeDasharray="10 8"
-                opacity="0.35"
+                stroke="#ededeb"
+                strokeOpacity="0.1"
+                strokeWidth="1"
               />
 
-              {/* Road Corridor Network Edges */}
+              {/* UTM Latitude / Longitude Margin Ticks */}
+              {[
+                { x: 140, label: '118.28°W' },
+                { x: 380, label: '118.25°W' },
+                { x: 620, label: '118.22°W' },
+                { x: 860, label: '118.19°W' },
+              ].map((tick) => (
+                <g key={tick.label}>
+                  <line
+                    x1={tick.x}
+                    y1="22"
+                    x2={tick.x}
+                    y2="28"
+                    stroke="#ededeb"
+                    strokeOpacity="0.22"
+                  />
+                  <text
+                    x={tick.x}
+                    y="15"
+                    fill="#686b67"
+                    fontSize="9.5"
+                    fontFamily="'IBM Plex Mono', monospace"
+                    textAnchor="middle"
+                  >
+                    {tick.label}
+                  </text>
+                </g>
+              ))}
+              {[
+                { y: 110, label: '34.10°N' },
+                { y: 290, label: '34.07°N' },
+                { y: 470, label: '34.04°N' },
+              ].map((tick) => (
+                <g key={tick.label}>
+                  <line
+                    x1="28"
+                    y1={tick.y}
+                    x2="34"
+                    y2={tick.y}
+                    stroke="#ededeb"
+                    strokeOpacity="0.22"
+                  />
+                  <text
+                    x="22"
+                    y={tick.y + 3}
+                    fill="#686b67"
+                    fontSize="9"
+                    fontFamily="'IBM Plex Mono', monospace"
+                    textAnchor="end"
+                    transform={`rotate(-90 22 ${tick.y})`}
+                  >
+                    {tick.label}
+                  </text>
+                </g>
+              ))}
+
+              {/* Topographic Elevation Contours */}
+              <g fill="none" stroke="#262926" strokeWidth="1">
+                <path d="M 28,175 Q 190,115 360,185 T 730,115 T 972,155" />
+                <path d="M 28,220 Q 210,165 390,235 T 755,165 T 972,205" strokeOpacity="0.7" />
+                <path d="M 28,395 Q 250,340 480,410 T 972,360" />
+                <path d="M 90,470 Q 230,395 360,480 T 520,558" strokeOpacity="0.75" />
+                <ellipse cx="155" cy="120" rx="110" ry="62" strokeOpacity="0.45" />
+                <ellipse cx="255" cy="455" rx="115" ry="68" strokeOpacity="0.45" />
+              </g>
+              <text
+                x="155"
+                y="68"
+                fill="#4a4e4a"
+                fontSize="8.5"
+                fontFamily="'IBM Plex Mono', monospace"
+                textAnchor="middle"
+              >
+                ELEV 420M
+              </text>
+              <text
+                x="175"
+                y="518"
+                fill="#4a4e4a"
+                fontSize="8.5"
+                fontFamily="'IBM Plex Mono', monospace"
+              >
+                HIGHLAND RIDGE 380M
+              </text>
+
+              {/* Canal Hydrography */}
+              <path
+                d="M 380,558 C 440,455 465,395 500,320 C 535,245 605,170 695,22"
+                fill="none"
+                stroke="#182e3b"
+                strokeWidth="12"
+                strokeLinecap="round"
+              />
+              <path
+                d="M 380,558 C 440,455 465,395 500,320 C 535,245 605,170 695,22"
+                fill="none"
+                stroke="#2c5770"
+                strokeWidth="1"
+                strokeDasharray="8 6"
+              />
+
+              {/* Road Corridors */}
               {TACTICAL_MAP_EDGES.map((edge) => {
                 const a = nodeById.get(edge.from);
                 const b = nodeById.get(edge.to);
                 if (!a || !b) return null;
                 const stroke =
                   edge.roadCondition === 'COMPROMISED'
-                    ? '#991b1b'
+                    ? '#843438'
                     : edge.roadCondition === 'FLOODED'
-                      ? '#0369a1'
+                      ? '#2e5d78'
                       : edge.roadCondition === 'DEBRIS'
-                        ? '#92400e'
-                        : '#334155';
+                        ? '#806433'
+                        : '#3d413d';
+                const midX = (a.coords.x + b.coords.x) / 2;
+                const midY = (a.coords.y + b.coords.y) / 2;
+                const dx = b.coords.x - a.coords.x;
+                const dy = b.coords.y - a.coords.y;
+                const len = Math.hypot(dx, dy) || 1;
+                const offX = (-dy / len) * 11;
+                const offY = (dx / len) * 11;
                 return (
                   <g key={`${edge.from}-${edge.to}`}>
                     <line
@@ -344,16 +525,24 @@ export const TacticalMapView: React.FC<TacticalMapViewProps> = ({
                       x2={b.coords.x}
                       y2={b.coords.y}
                       stroke={stroke}
-                      strokeWidth={edge.roadCondition === 'CLEAR' ? 3 : 2.5}
-                      strokeDasharray={edge.roadCondition === 'CLEAR' ? undefined : '5 5'}
-                      opacity={0.75}
+                      strokeWidth={edge.roadCondition === 'CLEAR' ? 2.25 : 2}
+                      strokeDasharray={edge.roadCondition === 'CLEAR' ? undefined : '5 4'}
+                    />
+                    <rect
+                      x={midX + offX - 18}
+                      y={midY + offY - 7}
+                      width="36"
+                      height="13"
+                      rx="2"
+                      fill="#0e100f"
+                      fillOpacity="0.88"
                     />
                     <text
-                      x={(a.coords.x + b.coords.x) / 2}
-                      y={(a.coords.y + b.coords.y) / 2 - 5}
-                      fill="#64748b"
+                      x={midX + offX}
+                      y={midY + offY + 2.5}
+                      fill="#7b7f7a"
                       fontSize="9"
-                      fontFamily="monospace"
+                      fontFamily="'IBM Plex Mono', monospace"
                       textAnchor="middle"
                     >
                       {edge.distanceKm}km
@@ -362,248 +551,262 @@ export const TacticalMapView: React.FC<TacticalMapViewProps> = ({
                 );
               })}
 
-              {/* Local Mesh Network Radio Rings */}
+              {/* Local Mesh Peer Range Rings */}
               {showMeshRings &&
                 peers.map((peer) => (
                   <g key={`mesh-${peer.id}`}>
                     <circle
                       cx={peer.coords.x}
                       cy={peer.coords.y}
-                      r={105}
-                      fill="url(#meshGrad)"
-                      stroke="#06b6d4"
-                      strokeOpacity="0.32"
-                      strokeWidth="1.2"
-                      strokeDasharray="4 4"
+                      r={98}
+                      fill="none"
+                      stroke="#4ea1f3"
+                      strokeOpacity="0.22"
+                      strokeWidth="1"
+                      strokeDasharray="3 4"
                     />
                     <circle
                       cx={peer.coords.x}
                       cy={peer.coords.y}
-                      r={5}
-                      fill="#22d3ee"
-                      stroke="#083344"
-                      strokeWidth="2"
+                      r={3.5}
+                      fill="#4ea1f3"
+                      stroke="#0e100f"
+                      strokeWidth="1.5"
                     />
                     <text
                       x={peer.coords.x + 8}
-                      y={peer.coords.y + 4}
-                      fill="#67e8f9"
+                      y={peer.coords.y + 3}
+                      fill="#8cbef2"
                       fontSize="9.5"
-                      fontFamily="monospace"
+                      fontFamily="'IBM Plex Mono', monospace"
                     >
                       {peer.callsign}
                     </text>
                   </g>
                 ))}
 
-              {/* Active Hazard Zones (Whiteboard Red X markers!) */}
+              {/* Active Hatched Hazard Exclusion Zones */}
               {hazards
                 .filter((h) => h.active)
-                .map((hz) => (
-                  <g key={hz.id}>
-                    <circle
-                      cx={hz.coords.x}
-                      cy={hz.coords.y}
-                      r={hz.radius}
-                      fill="url(#hazardGrad)"
-                      stroke="#ef4444"
-                      strokeOpacity="0.55"
-                      strokeWidth="1.5"
-                      strokeDasharray="6 4"
-                    />
-                    {/* Red X Marker */}
-                    <line
-                      x1={hz.coords.x - 10}
-                      y1={hz.coords.y - 10}
-                      x2={hz.coords.x + 10}
-                      y2={hz.coords.y + 10}
-                      stroke="#ef4444"
-                      strokeWidth="3.2"
-                      strokeLinecap="round"
-                    />
-                    <line
-                      x1={hz.coords.x + 10}
-                      y1={hz.coords.y - 10}
-                      x2={hz.coords.x - 10}
-                      y2={hz.coords.y + 10}
-                      stroke="#ef4444"
-                      strokeWidth="3.2"
-                      strokeLinecap="round"
-                    />
-                    <rect
-                      x={hz.coords.x - 66}
-                      y={hz.coords.y + 14}
-                      width="132"
-                      height="20"
-                      rx="5"
-                      fill="#450a0a"
-                      fillOpacity="0.88"
-                      stroke="#ef4444"
-                      strokeOpacity="0.6"
-                    />
-                    <text
-                      x={hz.coords.x}
-                      y={hz.coords.y + 27}
-                      fill="#fecaca"
-                      fontSize="9.5"
-                      fontWeight="700"
-                      fontFamily="monospace"
-                      textAnchor="middle"
-                    >
-                      DANGER {hz.dangerLevel}/10 · {hz.type}
-                    </text>
-                  </g>
-                ))}
+                .map((hz) => {
+                  const lbl = getHazardLabelOffset(hz);
+                  const lx = Math.max(104, Math.min(896, hz.coords.x + lbl.dx));
+                  const ly = Math.max(46, Math.min(540, hz.coords.y + lbl.dy));
+                  return (
+                    <g key={hz.id}>
+                      <circle
+                        cx={hz.coords.x}
+                        cy={hz.coords.y}
+                        r={hz.radius}
+                        fill="url(#hazardHatch)"
+                        stroke="#e5484d"
+                        strokeOpacity="0.65"
+                        strokeWidth="1.25"
+                        strokeDasharray="5 3"
+                      />
+                      <line
+                        x1={hz.coords.x - 8}
+                        y1={hz.coords.y - 8}
+                        x2={hz.coords.x + 8}
+                        y2={hz.coords.y + 8}
+                        stroke="#e5484d"
+                        strokeWidth="2.5"
+                        strokeLinecap="square"
+                      />
+                      <line
+                        x1={hz.coords.x + 8}
+                        y1={hz.coords.y - 8}
+                        x2={hz.coords.x - 8}
+                        y2={hz.coords.y + 8}
+                        stroke="#e5484d"
+                        strokeWidth="2.5"
+                        strokeLinecap="square"
+                      />
+                      <rect
+                        x={lx - 68}
+                        y={ly - 10}
+                        width="136"
+                        height="19"
+                        rx="4"
+                        fill="#1f1213"
+                        fillOpacity="0.94"
+                        stroke="#e5484d"
+                        strokeOpacity="0.45"
+                        strokeWidth="1"
+                      />
+                      <text
+                        x={lx}
+                        y={ly + 3}
+                        fill="#f3b2b4"
+                        fontSize="9.5"
+                        fontWeight="500"
+                        fontFamily="'IBM Plex Mono', monospace"
+                        textAnchor="middle"
+                      >
+                        D{hz.dangerLevel}/10 · {hz.type}
+                      </text>
+                    </g>
+                  );
+                })}
 
-              {/* Pure Shortest Route (Dashed Amber/Red to warn against dangerous shortcuts) */}
+              {/* Risky Raw Shortest Route */}
               {routing.pureShortestRoute &&
                 routing.safestOptimalRoute &&
                 routing.pureShortestRoute.campId !== routing.safestOptimalRoute.campId && (
                   <polyline
                     points={toPolyline(routing.pureShortestRoute.points)}
                     fill="none"
-                    stroke="#f87171"
-                    strokeWidth="3"
-                    strokeDasharray="7 6"
-                    strokeLinecap="round"
-                    strokeLinejoin="round"
-                    opacity="0.75"
-                  />
-                )}
-
-              {/* Route to Selected Camp (if different from global optimal) */}
-              {routeToSelectedSafe &&
-                routeToSelectedSafe.campId !== routing.safestOptimalRoute?.campId && (
-                  <polyline
-                    points={toPolyline(routeToSelectedSafe.points)}
-                    fill="none"
-                    stroke="#38bdf8"
-                    strokeWidth="3.5"
-                    strokeDasharray="10 5"
+                    stroke="#e5484d"
+                    strokeWidth="2.25"
+                    strokeDasharray="6 5"
                     strokeLinecap="round"
                     strokeLinejoin="round"
                     opacity="0.85"
                   />
                 )}
 
-              {/* GLOBAL SAFEST & SHORTEST OPTIMAL PATH (Whiteboard: distance × danger level) */}
+              {/* Route to Selected Camp */}
+              {routeToSelectedSafe &&
+                routeToSelectedSafe.campId !== routing.safestOptimalRoute?.campId && (
+                  <polyline
+                    points={toPolyline(routeToSelectedSafe.points)}
+                    fill="none"
+                    stroke="#4ea1f3"
+                    strokeWidth="2.5"
+                    strokeDasharray="8 5"
+                    strokeLinecap="round"
+                    strokeLinejoin="round"
+                    opacity="0.9"
+                  />
+                )}
+
+              {/* Safest Optimal Route */}
               {routing.safestOptimalRoute && (
                 <g>
                   <polyline
                     points={toPolyline(routing.safestOptimalRoute.points)}
                     fill="none"
-                    stroke="#10b981"
-                    strokeWidth="9"
-                    strokeLinecap="round"
-                    strokeLinejoin="round"
-                    opacity="0.2"
-                  />
-                  <polyline
-                    points={toPolyline(routing.safestOptimalRoute.points)}
-                    fill="none"
-                    stroke="#34d399"
-                    strokeWidth="4"
+                    stroke="#4cc38a"
+                    strokeWidth="3.5"
                     strokeLinecap="round"
                     strokeLinejoin="round"
                   />
+                  {routing.safestOptimalRoute.points.slice(1, -1).map((pt, idx) => (
+                    <circle
+                      key={`wp-${idx}`}
+                      cx={pt.x}
+                      cy={pt.y}
+                      r={3.5}
+                      fill="#0e100f"
+                      stroke="#4cc38a"
+                      strokeWidth="2"
+                    />
+                  ))}
                 </g>
               )}
 
-              {/* Road Junction Dots */}
+              {/* Junction Dots */}
               {TACTICAL_MAP_NODES.filter((n) => !n.campId).map((j) => (
                 <circle
                   key={j.id}
                   cx={j.coords.x}
                   cy={j.coords.y}
-                  r={3.5}
-                  fill="#475569"
-                  stroke="#0f172a"
+                  r={3}
+                  fill="#4c504c"
+                  stroke="#0e100f"
                   strokeWidth="1.5"
                 />
               ))}
 
-              {/* Aid Camp Markers */}
+              {/* Keyboard-Accessible Aid Camp Stations */}
               {camps.map((camp) => {
-                const palette = statusColors[camp.status];
+                const meta = statusMeta[camp.status];
                 const isSelected = camp.id === selectedCamp?.id;
                 const isRecommended = camp.id === routing.safestOptimalRoute?.campId;
+                const lbl = getCampLabelOffset(camp);
+
                 return (
                   <g
                     key={camp.id}
+                    role="button"
+                    tabIndex={0}
+                    aria-label={`${camp.name} (${camp.code}), ${camp.status === 'DESTROYED' ? 'Destroyed' : `${camp.availableBeds} open beds, safety ${camp.safetyLevel} out of 10`}`}
                     onClick={(e) => {
                       e.stopPropagation();
                       setSelectedCampId(camp.id);
                     }}
-                    className="cursor-pointer"
+                    onKeyDown={(e) => {
+                      if (e.key === 'Enter' || e.key === ' ') {
+                        e.preventDefault();
+                        e.stopPropagation();
+                        setSelectedCampId(camp.id);
+                      }
+                    }}
+                    className="cursor-pointer focus:outline-none"
                   >
-                    {/* Recommended glow halo */}
                     {isRecommended && (
-                      <circle
-                        cx={camp.coords.x}
-                        cy={camp.coords.y}
-                        r={30}
-                        fill="none"
-                        stroke="#34d399"
-                        strokeWidth="2"
-                        strokeDasharray="4 3"
-                      />
+                      <g stroke="#4cc38a" strokeWidth="1.75" fill="none">
+                        <path d={`M ${camp.coords.x - 24},${camp.coords.y - 16} V ${camp.coords.y - 24} H ${camp.coords.x - 16}`} />
+                        <path d={`M ${camp.coords.x + 16},${camp.coords.y - 24} H ${camp.coords.x + 24} V ${camp.coords.y - 16}`} />
+                        <path d={`M ${camp.coords.x - 24},${camp.coords.y + 16} V ${camp.coords.y + 24} H ${camp.coords.x - 16}`} />
+                        <path d={`M ${camp.coords.x + 16},${camp.coords.y + 24} H ${camp.coords.x + 24} V ${camp.coords.y + 16}`} />
+                      </g>
                     )}
 
-                    {/* Selection ring */}
                     {isSelected && (
-                      <circle
-                        cx={camp.coords.x}
-                        cy={camp.coords.y}
-                        r={25}
+                      <rect
+                        x={camp.coords.x - 22}
+                        y={camp.coords.y - 22}
+                        width="44"
+                        height="44"
+                        rx="8"
                         fill="none"
-                        stroke="#38bdf8"
-                        strokeWidth="2.5"
+                        stroke="#4ea1f3"
+                        strokeWidth="1.75"
                       />
                     )}
 
-                    {/* Camp body */}
                     <rect
-                      x={camp.coords.x - 19}
-                      y={camp.coords.y - 19}
-                      width="38"
-                      height="38"
-                      rx="10"
-                      fill={palette.fill}
-                      stroke={palette.ring}
-                      strokeWidth="2.5"
+                      x={camp.coords.x - 17}
+                      y={camp.coords.y - 17}
+                      width="34"
+                      height="34"
+                      rx="6"
+                      fill={meta.fill}
+                      stroke={meta.stroke}
+                      strokeWidth="1.75"
                     />
 
-                    {/* Camp icon text: Beds or X if destroyed */}
                     {camp.status === 'DESTROYED' ? (
                       <text
                         x={camp.coords.x}
-                        y={camp.coords.y + 6}
-                        fill="#fca5a5"
-                        fontSize="16"
-                        fontWeight="800"
+                        y={camp.coords.y + 5}
+                        fill="#f3a6a8"
+                        fontSize="15"
+                        fontWeight="600"
                         textAnchor="middle"
                       >
-                        ✕
+                        ×
                       </text>
                     ) : (
                       <>
                         <text
                           x={camp.coords.x}
                           y={camp.coords.y + 1}
-                          fill="#ffffff"
-                          fontSize="13"
-                          fontWeight="800"
-                          fontFamily="monospace"
+                          fill="#ededeb"
+                          fontSize="12.5"
+                          fontWeight="600"
+                          fontFamily="'IBM Plex Mono', monospace"
                           textAnchor="middle"
                         >
                           {camp.availableBeds}
                         </text>
                         <text
                           x={camp.coords.x}
-                          y={camp.coords.y + 12}
-                          fill="#cbd5e1"
+                          y={camp.coords.y + 11}
+                          fill="#9fa39e"
                           fontSize="7.5"
-                          fontFamily="monospace"
+                          fontFamily="'IBM Plex Mono', monospace"
                           textAnchor="middle"
                         >
                           BEDS
@@ -611,101 +814,102 @@ export const TacticalMapView: React.FC<TacticalMapViewProps> = ({
                       </>
                     )}
 
-                    {/* Camp Label Pill */}
                     <rect
-                      x={camp.coords.x - 62}
-                      y={camp.coords.y - 44}
-                      width="124"
-                      height="20"
-                      rx="6"
-                      fill="#0f172a"
-                      fillOpacity="0.92"
-                      stroke={isRecommended ? '#10b981' : '#334155'}
-                      strokeWidth="1.2"
+                      x={camp.coords.x - 56}
+                      y={camp.coords.y + lbl.yOffset}
+                      width="112"
+                      height="19"
+                      rx="4"
+                      fill="#141514"
+                      fillOpacity="0.95"
+                      stroke={isRecommended ? '#4cc38a' : isSelected ? '#4ea1f3' : '#323532'}
+                      strokeWidth="1"
                     />
                     <text
                       x={camp.coords.x}
-                      y={camp.coords.y - 31}
-                      fill={camp.status === 'DESTROYED' ? '#fca5a5' : '#f8fafc'}
-                      fontSize="10"
-                      fontWeight="700"
+                      y={camp.coords.y + lbl.textY}
+                      fill={camp.status === 'DESTROYED' ? '#f3a6a8' : '#ededeb'}
+                      fontSize="9.5"
+                      fontWeight="500"
+                      fontFamily="'IBM Plex Mono', monospace"
                       textAnchor="middle"
                     >
-                      {camp.code} · {camp.status === 'DESTROYED' ? 'DESTROYED' : `Safe ${camp.safetyLevel}/10`}
+                      {camp.code} · {camp.status === 'DESTROYED' ? 'OUT' : `${camp.safetyLevel}/10`}
                     </text>
                   </g>
                 );
               })}
 
-              {/* Field Worker Current Position Marker */}
+              {/* Field Worker Unit Reticle */}
               <g>
                 <circle
                   cx={workerPos.x}
                   cy={workerPos.y}
-                  r={18}
-                  fill="#06b6d4"
-                  fillOpacity="0.18"
-                  stroke="#22d3ee"
-                  strokeWidth="1.5"
+                  r={14}
+                  fill="#4ea1f3"
+                  fillOpacity="0.12"
+                  stroke="#4ea1f3"
+                  strokeWidth="1.25"
                 />
                 <circle
                   cx={workerPos.x}
                   cy={workerPos.y}
-                  r={8}
-                  fill="#22d3ee"
-                  stroke="#ffffff"
-                  strokeWidth="2.5"
+                  r={5.5}
+                  fill="#4ea1f3"
+                  stroke="#ededeb"
+                  strokeWidth="2"
                 />
                 <rect
-                  x={workerPos.x - 42}
-                  y={workerPos.y + 14}
-                  width="84"
+                  x={workerPos.x - 36}
+                  y={workerTagBelow ? workerPos.y + 16 : workerPos.y - 36}
+                  width="72"
                   height="18"
-                  rx="5"
-                  fill="#083344"
-                  stroke="#22d3ee"
+                  rx="4"
+                  fill="#121e2b"
+                  stroke="#4ea1f3"
+                  strokeOpacity="0.7"
                   strokeWidth="1"
                 />
                 <text
                   x={workerPos.x}
-                  y={workerPos.y + 26}
-                  fill="#cffafe"
+                  y={workerTagBelow ? workerPos.y + 28 : workerPos.y - 24}
+                  fill="#dcebfa"
                   fontSize="9.5"
-                  fontWeight="700"
-                  fontFamily="monospace"
+                  fontWeight="500"
+                  fontFamily="'IBM Plex Mono', monospace"
                   textAnchor="middle"
                 >
-                  YOU (FIELD)
+                  UNIT POS
                 </text>
               </g>
             </svg>
           </div>
 
-          {/* Bottom Map Legend & Formula Controls */}
-          <div className="flex flex-wrap items-center justify-between gap-3 border-t border-slate-800 bg-slate-900/90 px-4 py-2.5 text-[11px]">
-            <div className="flex flex-wrap items-center gap-3 text-slate-300">
-              <span className="flex items-center gap-1.5">
-                <span className="h-2.5 w-5 rounded-full bg-emerald-400" />
-                Safest & Shortest Route
+          {/* Map Legend & Routing Formula Controls */}
+          <div className="flex flex-wrap items-center justify-between gap-4 border-t border-hairline bg-surface px-4 py-3 text-xs">
+            <div className="flex flex-wrap items-center gap-4 text-ink-secondary">
+              <span className="flex items-center gap-2">
+                <span className="h-[3px] w-4 rounded-full bg-safe" />
+                Safest route
               </span>
-              <span className="flex items-center gap-1.5">
-                <span className="h-0.5 w-5 border-t-2 border-dashed border-red-400" />
-                Risky Raw Shortest
+              <span className="flex items-center gap-2">
+                <span className="h-0 w-4 border-t-2 border-dashed border-hazard" />
+                Risky shortcut
               </span>
-              <span className="flex items-center gap-1.5">
-                <span className="h-2.5 w-2.5 rounded-full bg-red-500/60 ring-1 ring-red-400" />
-                Hazard Zone (✕)
+              <span className="flex items-center gap-2">
+                <span className="h-2.5 w-2.5 rounded-[2px] border border-hazard bg-hazard/20" />
+                Hazard zone
               </span>
-              <span className="flex items-center gap-1.5">
-                <span className="h-2.5 w-2.5 rounded-full border border-dashed border-cyan-400" />
-                Local Mesh Peer
+              <span className="flex items-center gap-2">
+                <span className="h-2.5 w-2.5 rounded-full border border-dashed border-accent" />
+                Mesh peer
               </span>
             </div>
 
-            <div className="flex items-center gap-4">
-              <label className="flex items-center gap-2 text-slate-300">
-                <span className="font-mono text-[10px] text-cyan-300">
-                  Cost = dist × (1 + {dangerWeight.toFixed(2)}×danger)
+            <div className="flex flex-wrap items-center gap-4">
+              <label className="flex items-center gap-2.5 text-ink-secondary">
+                <span className="tabular font-mono text-[11px] text-ink-muted">
+                  dist × (1 + {dangerWeight.toFixed(2)}×danger)
                 </span>
                 <input
                   type="range"
@@ -714,15 +918,17 @@ export const TacticalMapView: React.FC<TacticalMapViewProps> = ({
                   step={0.05}
                   value={dangerWeight}
                   onChange={(e) => onChangeDangerWeight(parseFloat(e.target.value))}
-                  className="w-24 accent-emerald-400"
+                  aria-label="Danger weight"
+                  className="w-24"
                 />
               </label>
-              <label className="flex items-center gap-1.5 text-slate-300">
-                <span>Min Beds:</span>
+
+              <label className="flex items-center gap-2 text-ink-secondary">
+                <span>Min beds</span>
                 <select
                   value={minBeds}
                   onChange={(e) => setMinBeds(Number(e.target.value))}
-                  className="rounded border border-slate-700 bg-slate-950 px-1.5 py-0.5 font-mono text-xs text-white"
+                  className="h-8 rounded-md border border-control bg-recessed px-2 font-mono text-xs text-ink-primary sm:h-7"
                 >
                   <option value={1}>1+</option>
                   <option value={5}>5+</option>
@@ -732,266 +938,325 @@ export const TacticalMapView: React.FC<TacticalMapViewProps> = ({
               </label>
             </div>
           </div>
-        </div>
+        </section>
       </div>
 
-      {/* Right Column: Optimal Path Comparison + Selected Camp Inspector */}
-      <div className="flex flex-col gap-3 xl:col-span-4">
-        {/* Safest & Shortest Path Algorithm Result */}
-        <div className="rounded-2xl border border-emerald-500/30 bg-gradient-to-b from-emerald-950/35 to-slate-900/90 p-4">
-          <div className="mb-2 flex items-center justify-between">
-            <div className="flex items-center gap-2">
-              <Route className="h-4 w-4 text-emerald-400" />
-              <h2 className="text-xs font-bold uppercase tracking-wider text-emerald-300">
-                Safest & Shortest Path Engine
-              </h2>
-            </div>
-            <span className="rounded bg-emerald-500/15 px-1.5 py-0.5 font-mono text-[10px] text-emerald-300">
-              100% OFFLINE
-            </span>
+      {/* Right 4 Columns: Optimal Route Summary, Selected Camp Inspector, Sector Camp Table */}
+      <div className="flex flex-col gap-4 xl:col-span-4">
+        {/* Optimal Route Summary */}
+        <section className="rounded-xl border border-hairline bg-surface p-4">
+          <div className="flex items-center justify-between gap-2">
+            <h2 className="text-xs font-medium text-ink-secondary">Optimal evacuation route</h2>
+            <span className="font-mono text-[11px] text-ink-muted">Offline Dijkstra</span>
           </div>
 
           {routing.safestOptimalRoute ? (
-            <div className="space-y-2.5">
-              <div className="rounded-xl border border-emerald-500/30 bg-slate-950/80 p-3">
-                <div className="flex items-start justify-between gap-2">
-                  <div>
-                    <div className="text-[10px] font-semibold uppercase tracking-wider text-emerald-400">
-                      Optimal Target Camp
-                    </div>
-                    <div className="text-sm font-bold text-white">
-                      {routing.safestOptimalRoute.campName}
-                    </div>
-                  </div>
-                  <span className="rounded-lg bg-emerald-500/20 px-2 py-1 font-mono text-xs font-bold text-emerald-300">
-                    {routing.safestOptimalRoute.etaMinutes} min
-                  </span>
+            <div className="mt-3 space-y-3">
+              <div className="flex items-baseline justify-between gap-2">
+                <div className="text-base font-semibold text-ink-primary">
+                  {routing.safestOptimalRoute.campName}
                 </div>
-                <div className="mt-2 grid grid-cols-3 gap-2 text-center font-mono text-[11px]">
-                  <div className="rounded-lg bg-slate-900 p-1.5">
-                    <div className="text-[10px] text-slate-400">Distance</div>
-                    <div className="font-bold text-white">
-                      {routing.safestOptimalRoute.totalDistanceKm} km
-                    </div>
+                <span className="tabular font-mono text-sm font-medium text-safe">
+                  {routing.safestOptimalRoute.etaMinutes} min
+                </span>
+              </div>
+
+              <div className="grid grid-cols-3 divide-x divide-hairline rounded-lg border border-hairline bg-recessed">
+                <div className="px-3 py-2">
+                  <div className="text-[11px] text-ink-muted">Distance</div>
+                  <div className="tabular mt-0.5 font-mono text-sm font-medium text-ink-primary">
+                    {routing.safestOptimalRoute.totalDistanceKm} km
                   </div>
-                  <div className="rounded-lg bg-slate-900 p-1.5">
-                    <div className="text-[10px] text-slate-400">Avg Danger</div>
-                    <div className="font-bold text-emerald-300">
-                      {routing.safestOptimalRoute.avgDangerLevel}/10
-                    </div>
+                </div>
+                <div className="px-3 py-2">
+                  <div className="text-[11px] text-ink-muted">Avg danger</div>
+                  <div className="tabular mt-0.5 font-mono text-sm font-medium text-safe">
+                    {routing.safestOptimalRoute.avgDangerLevel}/10
                   </div>
-                  <div className="rounded-lg bg-slate-900 p-1.5">
-                    <div className="text-[10px] text-slate-400">Score</div>
-                    <div className="font-bold text-cyan-300">
-                      {routing.safestOptimalRoute.weightedScore}
-                    </div>
+                </div>
+                <div className="px-3 py-2">
+                  <div className="text-[11px] text-ink-muted">Cost score</div>
+                  <div className="tabular mt-0.5 font-mono text-sm font-medium text-ink-primary">
+                    {routing.safestOptimalRoute.weightedScore}
                   </div>
                 </div>
               </div>
 
-              {/* Contrast with dangerous raw shortest route if different */}
               {routing.pureShortestRoute &&
                 routing.pureShortestRoute.campId !== routing.safestOptimalRoute.campId && (
-                  <div className="rounded-xl border border-red-500/30 bg-red-950/25 p-2.5 text-xs">
-                    <div className="flex items-center gap-1.5 font-semibold text-red-300">
-                      <Flame className="h-3.5 w-3.5" />
-                      <span>Avoided Dangerous Shortcut ({routing.pureShortestRoute.campName})</span>
+                  <div className="rounded-lg border border-hazard/30 bg-hazard-dim/60 p-3 text-xs">
+                    <div className="font-medium text-ink-primary">
+                      Avoided shortcut to {routing.pureShortestRoute.campName}
                     </div>
-                    <p className="mt-1 text-[11px] text-red-200/80">
+                    <p className="mt-1 leading-relaxed text-ink-secondary">
                       Shorter by{' '}
-                      <strong>
+                      <span className="tabular font-mono text-ink-primary">
                         {Math.max(
                           0,
                           routing.safestOptimalRoute.totalDistanceKm -
                             routing.pureShortestRoute.totalDistanceKm
                         ).toFixed(1)}{' '}
                         km
-                      </strong>
-                      , but passes{' '}
-                      <strong>
-                        {routing.pureShortestRoute.hazardsCrossed.join(', ') || 'compromised road'}
-                      </strong>{' '}
-                      (max danger {routing.pureShortestRoute.maxDangerLevel}/10).
+                      </span>
+                      , but crosses{' '}
+                      {routing.pureShortestRoute.hazardsCrossed.join(', ') || 'compromised road'}{' '}
+                      (danger{' '}
+                      <span className="tabular font-mono text-hazard">
+                        {routing.pureShortestRoute.maxDangerLevel}/10
+                      </span>
+                      ).
                     </p>
                   </div>
                 )}
             </div>
           ) : (
-            <p className="text-xs text-red-300">
-              No operational camps match the minimum bed filter. Lower bed filter or check alerts.
+            <p className="mt-2 text-xs text-hazard">
+              No operational camps match the minimum bed filter. Lower the threshold or check alerts.
             </p>
           )}
-        </div>
+        </section>
 
-        {/* Selected Camp Detailed Inspector */}
+        {/* Selected Camp Inspector */}
         {selectedCamp && (
-          <div className="rounded-2xl border border-slate-800 bg-slate-900/85 p-4">
+          <section className="rounded-xl border border-hairline bg-surface p-4">
             <div className="flex items-start justify-between gap-2">
-              <div>
+              <div className="min-w-0">
                 <div className="flex items-center gap-2">
-                  <span className="font-mono text-[11px] font-bold text-cyan-400">
+                  <span className="font-mono text-xs font-medium text-ink-secondary">
                     {selectedCamp.code}
                   </span>
+                  <span className="inline-flex items-center gap-1.5 text-xs text-ink-secondary">
+                    <span className={`h-1.5 w-1.5 rounded-full ${statusMeta[selectedCamp.status].dot}`} />
+                    <span className={statusMeta[selectedCamp.status].textTone}>
+                      {statusMeta[selectedCamp.status].label}
+                    </span>
+                  </span>
+                </div>
+                <h3 className="mt-1 truncate text-base font-semibold text-ink-primary">
+                  {selectedCamp.name}
+                </h3>
+                <p className="text-xs text-ink-muted">{selectedCamp.sector}</p>
+              </div>
+              <span className="tabular shrink-0 font-mono text-[11px] text-ink-muted">
+                v{selectedCamp.version}
+              </span>
+            </div>
+
+            {/* 1px-Divided Camp KPI Strip */}
+            <div className="mt-3 grid grid-cols-3 divide-x divide-hairline rounded-lg border border-hairline bg-recessed">
+              <div className="px-3 py-2.5">
+                <div className="text-[11px] text-ink-muted">Open beds</div>
+                <div className="tabular mt-1 font-mono text-base font-medium text-ink-primary">
+                  {selectedCamp.availableBeds}
+                  <span className="text-xs text-ink-muted">/{selectedCamp.totalBeds}</span>
+                </div>
+              </div>
+              <div className="px-3 py-2.5">
+                <div className="text-[11px] text-ink-muted">Safety</div>
+                <div className="tabular mt-1 font-mono text-base font-medium text-ink-primary">
+                  {selectedCamp.safetyLevel}
+                  <span className="text-xs text-ink-muted">/10</span>
+                </div>
+              </div>
+              <div className="px-3 py-2.5">
+                <div className="text-[11px] text-ink-muted">Uncertainty</div>
+                <div className="mt-1.5">
+                  <UncertaintyMeter value={selectedCamp.uncertaintyScore} compact />
+                </div>
+              </div>
+            </div>
+
+            {/* Real 6-Hour Bed Trend & Onset (Operate mode history) */}
+            {bedHistoryStats && (
+              <div className="mt-3 rounded-lg border border-hairline bg-recessed px-3 py-2.5 text-xs">
+                <div className="flex items-center justify-between gap-2">
+                  <span className="text-[11px] text-ink-muted">6h bed availability trend</span>
                   <span
-                    className={`rounded-full border px-2 py-0.5 text-[10px] font-bold ${
-                      statusColors[selectedCamp.status].badge
+                    className={`tabular font-mono text-[11px] font-medium ${
+                      bedHistoryStats.delta < 0
+                        ? 'text-caution'
+                        : bedHistoryStats.delta > 0
+                          ? 'text-safe'
+                          : 'text-ink-muted'
                     }`}
                   >
-                    {selectedCamp.status}
+                    {bedHistoryStats.delta > 0 ? `+${bedHistoryStats.delta}` : bedHistoryStats.delta}{' '}
+                    beds vs 6h ago
                   </span>
                 </div>
-                <h3 className="mt-1 text-base font-bold text-white">{selectedCamp.name}</h3>
-                <p className="text-[11px] text-slate-400">{selectedCamp.sector}</p>
+                <div className="mt-2 grid grid-cols-4 gap-1.5">
+                  {bedHistoryStats.pts.map((pt, i) => {
+                    const pct = Math.max(
+                      6,
+                      Math.round((pt.availableBeds / Math.max(1, selectedCamp.totalBeds)) * 100)
+                    );
+                    const isLatest = i === bedHistoryStats.pts.length - 1;
+                    return (
+                      <div key={pt.timestamp + i} className="space-y-1">
+                        <div className="h-1.5 w-full overflow-hidden rounded-[2px] bg-ink-primary/10">
+                          <div
+                            className={`h-full rounded-[2px] ${
+                              isLatest
+                                ? selectedCamp.status === 'DESTROYED'
+                                  ? 'bg-hazard'
+                                  : selectedCamp.availableBeds <= 6
+                                    ? 'bg-caution'
+                                    : 'bg-safe'
+                                : 'bg-ink-secondary/45'
+                            }`}
+                            style={{ width: `${pct}%` }}
+                          />
+                        </div>
+                        <div className="tabular font-mono text-[10px] text-ink-muted">
+                          {pt.availableBeds}
+                        </div>
+                      </div>
+                    );
+                  })}
+                </div>
+                <div className="mt-1.5 text-[11px] text-ink-secondary">
+                  Latest change: {bedHistoryStats.latestNote}
+                </div>
               </div>
-            </div>
+            )}
 
-            <div className="mt-3 grid grid-cols-3 gap-2">
-              <div className="rounded-xl border border-slate-800 bg-slate-950/70 p-2.5">
-                <div className="flex items-center gap-1 text-[10px] text-slate-400">
-                  <BedDouble className="h-3 w-3 text-cyan-400" /> Open Beds
-                </div>
-                <div className="mt-0.5 font-mono text-lg font-extrabold text-white">
-                  {selectedCamp.availableBeds}
-                  <span className="text-xs font-normal text-slate-500">
-                    /{selectedCamp.totalBeds}
-                  </span>
-                </div>
-              </div>
-              <div className="rounded-xl border border-slate-800 bg-slate-950/70 p-2.5">
-                <div className="flex items-center gap-1 text-[10px] text-slate-400">
-                  <Shield className="h-3 w-3 text-emerald-400" /> Safety
-                </div>
-                <div className="mt-0.5 font-mono text-lg font-extrabold text-emerald-300">
-                  {selectedCamp.safetyLevel}
-                  <span className="text-xs font-normal text-slate-500">/10</span>
-                </div>
-              </div>
-              <div className="rounded-xl border border-slate-800 bg-slate-950/70 p-2.5">
-                <div className="flex items-center gap-1 text-[10px] text-slate-400">
-                  <ShieldAlert className="h-3 w-3 text-amber-400" /> Uncertainty
-                </div>
-                <div
-                  className={`mt-0.5 font-mono text-lg font-extrabold ${
-                    selectedCamp.uncertaintyScore >= 50
-                      ? 'text-red-400'
-                      : selectedCamp.uncertaintyScore >= 25
-                        ? 'text-amber-300'
-                        : 'text-emerald-300'
-                  }`}
-                >
-                  {selectedCamp.uncertaintyScore}%
-                </div>
-              </div>
-            </div>
-
-            {/* Supplies & Uncertainty note */}
-            <div className="mt-3 space-y-2 text-xs">
+            {/* Capabilities + Supplies + Uncertainty Note */}
+            <div className="mt-3 space-y-3 text-xs">
               <div className="flex flex-wrap gap-1.5">
                 {selectedCamp.capabilities.map((cap) => (
                   <span
                     key={cap}
-                    className="rounded-md border border-slate-700/80 bg-slate-800/70 px-2 py-0.5 text-[10px] text-slate-300"
+                    className="rounded border border-hairline bg-recessed px-2 py-0.5 text-[11px] text-ink-secondary"
                   >
                     {cap}
                   </span>
                 ))}
               </div>
-              <div className="grid grid-cols-3 gap-2 rounded-lg bg-slate-950/60 p-2 font-mono text-[10px] text-slate-300">
-                <div>Water: {selectedCamp.supplies.waterLiters}L</div>
-                <div>Trauma: {selectedCamp.supplies.traumaKits} kits</div>
-                <div>Power: {selectedCamp.supplies.powerHoursLeft}h</div>
+
+              <div className="grid grid-cols-3 gap-2 rounded-lg border border-hairline bg-recessed px-3 py-2 font-mono text-[11px] text-ink-secondary">
+                <div className="tabular">Water {selectedCamp.supplies.waterLiters} L</div>
+                <div className="tabular">Trauma {selectedCamp.supplies.traumaKits}</div>
+                <div className="tabular">Power {selectedCamp.supplies.powerHoursLeft} h</div>
               </div>
-              <div className="rounded-lg border border-amber-500/20 bg-amber-500/5 p-2 text-[11px] text-amber-200/90">
-                <strong className="text-amber-300">Uncertainty Log:</strong>{' '}
-                {selectedCamp.uncertaintyNotes}
-                <div className="mt-1 font-mono text-[10px] text-slate-400">
-                  Updated by {selectedCamp.lastUpdatedBy} (v{selectedCamp.version})
+
+              <div className="rounded-lg border border-hairline bg-recessed p-3">
+                <div className="text-[11px] font-medium text-ink-primary">Uncertainty log</div>
+                <p className="mt-1 leading-relaxed text-ink-secondary">
+                  {selectedCamp.uncertaintyNotes}
+                </p>
+                <div className="mt-1.5 font-mono text-[11px] text-ink-muted">
+                  {selectedCamp.lastUpdatedBy}
                 </div>
               </div>
 
-              {/* Direct route info to this selected camp */}
               {routeToSelectedSafe && routeToSelectedShort && (
-                <div className="rounded-lg border border-slate-800 bg-slate-950/70 p-2.5 text-[11px] text-slate-300">
-                  <div className="flex items-center justify-between">
-                    <span className="flex items-center gap-1 font-semibold text-cyan-300">
-                      <Navigation className="h-3.5 w-3.5" /> Safe Route to {selectedCamp.code}
-                    </span>
-                    <span className="font-mono">
-                      {routeToSelectedSafe.totalDistanceKm} km · {routeToSelectedSafe.etaMinutes}m
-                    </span>
-                  </div>
-                  {routeToSelectedSafe.hazardsCrossed.length > 0 && (
-                    <div className="mt-1 text-[10px] text-amber-300">
-                      ⚠ Caution near: {routeToSelectedSafe.hazardsCrossed.join(', ')}
-                    </div>
-                  )}
+                <div className="flex items-center justify-between rounded-lg border border-hairline bg-recessed px-3 py-2">
+                  <span className="flex items-center gap-1.5 text-ink-secondary">
+                    <NavigationIcon size={14} className="text-ink-muted" />
+                    <span>Safe route to {selectedCamp.code}</span>
+                  </span>
+                  <span className="tabular font-mono text-xs text-ink-primary">
+                    {routeToSelectedSafe.totalDistanceKm} km · {routeToSelectedSafe.etaMinutes} min
+                  </span>
                 </div>
               )}
             </div>
 
-            {/* Action Buttons */}
-            <div className="mt-3 flex flex-col gap-2">
+            {/* Action Buttons with Two-Step Confirmation on Destructive Action */}
+            <div className="mt-4 grid grid-cols-1 gap-2">
               <button
                 onClick={() => onOpenReportForCamp(selectedCamp.id)}
-                className="flex w-full items-center justify-center gap-1.5 rounded-xl border border-cyan-500/40 bg-cyan-500/15 py-2 text-xs font-semibold text-cyan-200 transition hover:bg-cyan-500/25"
+                className="btn-secondary flex h-10 w-full items-center justify-center gap-2 rounded-lg text-xs font-medium sm:h-9"
               >
-                <Radio className="h-3.5 w-3.5" />
-                <span>Submit Field Update for {selectedCamp.code}</span>
+                <RadioIcon size={14} className="text-ink-muted" />
+                <span>Log field update for {selectedCamp.code}</span>
               </button>
 
               {selectedCamp.status !== 'DESTROYED' && !selectedCamp.isMainBase && (
-                <button
-                  onClick={() => onMarkCampDestroyed(selectedCamp.id)}
-                  className="flex w-full items-center justify-center gap-1.5 rounded-xl border border-red-500/40 bg-red-500/15 py-2 text-xs font-semibold text-red-200 transition hover:bg-red-500/25"
-                >
-                  <AlertOctagon className="h-3.5 w-3.5" />
-                  <span>Report Camp Destroyed · Broadcast Alert</span>
-                </button>
+                confirmDestroyId === selectedCamp.id ? (
+                  <div className="flex items-center gap-2 rounded-lg border border-hazard/45 bg-hazard-dim/70 p-2">
+                    <button
+                      onClick={() => {
+                        onMarkCampDestroyed(selectedCamp.id);
+                        setConfirmDestroyId(null);
+                      }}
+                      className="btn-danger flex h-9 flex-1 items-center justify-center gap-1.5 rounded-md text-xs font-medium sm:h-8"
+                    >
+                      <AlertOctagonIcon size={14} />
+                      <span>Confirm destroy {selectedCamp.code}</span>
+                    </button>
+                    <button
+                      onClick={() => setConfirmDestroyId(null)}
+                      className="btn-secondary h-9 rounded-md px-3 text-xs font-medium sm:h-8"
+                    >
+                      Cancel
+                    </button>
+                  </div>
+                ) : (
+                  <button
+                    onClick={() => setConfirmDestroyId(selectedCamp.id)}
+                    className="btn-danger flex h-10 w-full items-center justify-center gap-2 rounded-lg text-xs font-medium sm:h-9"
+                  >
+                    <AlertOctagonIcon size={14} />
+                    <span>Report camp destroyed</span>
+                  </button>
+                )
               )}
             </div>
-          </div>
+          </section>
         )}
 
-        {/* Compact All-Camps Quick Selector */}
-        <div className="rounded-2xl border border-slate-800 bg-slate-900/70 p-3">
-          <div className="mb-2 text-[11px] font-bold uppercase tracking-wider text-slate-400">
-            All Sector Aid Camps ({camps.filter((c) => c.status !== 'DESTROYED').length}/{camps.length}{' '}
-            Active)
+        {/* All Sector Camps List */}
+        <section className="rounded-xl border border-hairline bg-surface p-4">
+          <div className="mb-3 flex items-center justify-between">
+            <h3 className="text-xs font-medium text-ink-secondary">Sector aid camps</h3>
+            <span className="tabular font-mono text-[11px] text-ink-muted">
+              {camps.filter((c) => c.status !== 'DESTROYED').length}/{camps.length} active
+            </span>
           </div>
-          <div className="space-y-1.5">
-            {camps.map((c) => (
-              <button
-                key={c.id}
-                onClick={() => setSelectedCampId(c.id)}
-                className={`flex w-full items-center justify-between rounded-xl border px-2.5 py-2 text-left text-xs transition ${
-                  c.id === selectedCamp?.id
-                    ? 'border-cyan-500/50 bg-cyan-500/10'
-                    : 'border-slate-800 bg-slate-950/60 hover:border-slate-700'
-                }`}
-              >
-                <div>
-                  <div className="font-semibold text-slate-100">{c.name}</div>
-                  <div className="font-mono text-[10px] text-slate-400">
-                    {c.code} · Safe {c.safetyLevel}/10 · Unc {c.uncertaintyScore}%
+          <div className="divide-y divide-hairline overflow-hidden rounded-lg border border-hairline bg-recessed">
+            {camps.map((c) => {
+              const selected = c.id === selectedCamp?.id;
+              return (
+                <button
+                  key={c.id}
+                  onClick={() => setSelectedCampId(c.id)}
+                  className={`flex w-full items-center justify-between gap-2 px-3 py-2.5 text-left text-xs transition-colors duration-150 ease-instrument ${
+                    selected
+                      ? 'bg-raised text-ink-primary'
+                      : 'text-ink-secondary hover:bg-raised/60 hover:text-ink-primary'
+                  }`}
+                >
+                  <div className="min-w-0">
+                    <div className="flex items-center gap-2">
+                      <span
+                        className={`h-1.5 w-1.5 shrink-0 rounded-full ${statusMeta[c.status].dot}`}
+                      />
+                      <span className="truncate font-medium text-ink-primary">{c.name}</span>
+                    </div>
+                    <div className="mt-1 flex items-center gap-2.5 pl-3.5">
+                      <span className="font-mono text-[11px] text-ink-muted">{c.code}</span>
+                      <UncertaintyMeter value={c.uncertaintyScore} compact />
+                    </div>
                   </div>
-                </div>
-                <div className="text-right">
-                  <div
-                    className={`font-mono text-xs font-bold ${
-                      c.status === 'DESTROYED'
-                        ? 'text-red-400'
-                        : c.availableBeds <= 5
-                          ? 'text-amber-300'
-                          : 'text-emerald-300'
-                    }`}
-                  >
-                    {c.status === 'DESTROYED' ? 'DESTROYED' : `${c.availableBeds} beds`}
+                  <div className="shrink-0 text-right">
+                    <span
+                      className={`tabular font-mono text-xs font-medium ${
+                        c.status === 'DESTROYED'
+                          ? 'text-hazard'
+                          : c.availableBeds <= 5
+                            ? 'text-caution'
+                            : 'text-safe'
+                      }`}
+                    >
+                      {c.status === 'DESTROYED' ? 'Destroyed' : `${c.availableBeds} beds`}
+                    </span>
                   </div>
-                </div>
-              </button>
-            ))}
+                </button>
+              );
+            })}
           </div>
-        </div>
+        </section>
       </div>
     </div>
   );

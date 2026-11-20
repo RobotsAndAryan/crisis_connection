@@ -1,11 +1,11 @@
 {
-  "name": "Crisis Connection — Hybrid AI Aid Network",
+  "name": "Crisis Connection: Hybrid AI Aid Network",
   "short_name": "CrisisConnect",
-  "description": "Closed-loop Hybrid AI system connecting Base Aid Camps and offline field workers using Firebase AI Logic (Gemini Nano 4 + Cloud Gemini).",
+  "description": "Closed-loop Hybrid AI system connecting Base Aid Camps and offline field workers using Firebase AI Logic (Gemini Nano 4 and Cloud Gemini).",
   "start_url": "/",
   "display": "standalone",
-  "background_color": "#070b14",
-  "theme_color": "#070b14",
+  "background_color": "#111211",
+  "theme_color": "#111211",
   "orientation": "any",
   "icons": [
     {

@@ -1,3 +1,11 @@
+/*
+ * Design Direction (Crisis Connection — Matte Graphite Field Instrument)
+ * - Mode: Operate (humanitarian dispatch, field triage, peer mesh sync, and cloud reconciliation).
+ * - Character: Taut, legible, field-rugged.
+ * - World: Topographic SAR field maps, handheld emergency radios, and medical dispatch boards (matte mineral graphite ramp, IBM Plex Sans + Mono, off-white primary actions, single radio-steel accent).
+ * - Moments: (1) Sector Meridian topographic map with UTM ticks, relief contours, hatched hazard exclusion zones, dual-route comparison, and collision-free labels; (2) Cloud ward CCTV monitor paired with structured reconciliation diff.
+ * - Signature: Calibrated 10-tick hairline UncertaintyMeter paired with monospace camp callsigns, Lamport versions, and 6-hour bed depletion history.
+ */
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { InferenceMode } from 'firebase/ai';
 import {
@@ -65,20 +73,35 @@ import { FirebaseDiagnosticsModal } from './components/FirebaseDiagnosticsModal'
 import { ClosedLoopBanner } from './components/ClosedLoopBanner';
 import { DemoWalkthroughDrawer } from './components/DemoWalkthroughDrawer';
 
+interface ToastState {
+  message: string;
+  actionLabel?: string;
+  onAction?: () => void;
+}
+
 const INITIAL_MESSAGES: ChatMessage[] = [
   {
     id: 'welcome-msg',
     role: 'assistant',
-    text: `**Crisis Connection Field AI Ready.**\n\nI query your downloaded aid camp database, danger-weighted tactical map, and offline CPR/trauma protocols directly on-device via **Firebase AI Logic (Gemini Nano 4)** — and automatically fall back to **Cloud Gemini** when online on unsupported browsers.\n\nTry asking for the **closest safe aid camp**, **CPR / tourniquet steps**, or attach a **ward/injury photo** or tap the **microphone** for hands-free voice triage.`,
+    text: `**Field assistant ready**\n\nQueries run against your local aid camp database, danger-weighted map routes, and cached CPR and trauma protocols via Firebase AI Logic (Gemini Nano 4 on-device, with Cloud Gemini fallback when online).\n\nAsk for the closest safe aid camp, CPR or tourniquet steps, attach a ward or injury photo, or use voice input.`,
     timestamp: new Date().toISOString(),
-    sourcesCited: ['Downloaded Aid Camp DB', 'Offline Protocols'],
+    sourcesCited: ['Local aid camp DB', 'Offline protocols'],
   },
 ];
+
+function getInitialTab(): ActiveTab {
+  if (typeof window === 'undefined') return 'map';
+  const param = new URLSearchParams(window.location.search).get('tab');
+  if (param === 'map' || param === 'field' || param === 'mesh' || param === 'cloud') {
+    return param;
+  }
+  return 'map';
+}
 
 export function App() {
   const cached = useMemo(() => loadLocalDatabase(), []);
 
-  const [activeTab, setActiveTab] = useState<ActiveTab>('map');
+  const [activeTab, setActiveTab] = useState<ActiveTab>(getInitialTab);
   const [operatingMode, setOperatingMode] = useState<OperatingMode>(
     typeof navigator !== 'undefined' && !navigator.onLine
       ? 'FIELD_OFFLINE'
@@ -117,12 +140,13 @@ export function App() {
   const [downloadingPack, setDownloadingPack] = useState(false);
   const [nanoDownloadProgress, setNanoDownloadProgress] = useState<number | null>(null);
   const [diagnosticsOpen, setDiagnosticsOpen] = useState(false);
-  const [toast, setToast] = useState<string | null>(null);
+  const [demoGuideOpen, setDemoGuideOpen] = useState(false);
+  const [toast, setToast] = useState<ToastState | null>(null);
+  const toastTimerRef = useRef<number | null>(null);
 
   const transceiverRef = useRef<LocalMeshTransceiver | null>(null);
   const [deviceCallsign, setDeviceCallsign] = useState<string>('ALPHA-01');
 
-  // Refs for latest state inside BroadcastChannel callbacks
   const campsRef = useRef(camps);
   const alertsRef = useRef(alerts);
   const reportsRef = useRef(reports);
@@ -130,11 +154,43 @@ export function App() {
   alertsRef.current = alerts;
   reportsRef.current = reports;
 
-  const showToast = useCallback((msg: string) => {
-    setToast(msg);
-    setTimeout(() => {
-      setToast((curr) => (curr === msg ? null : curr));
-    }, 4200);
+  const showToast = useCallback(
+    (
+      message: string,
+      opts?: { actionLabel?: string; onAction?: () => void; durationMs?: number }
+    ) => {
+      if (toastTimerRef.current) {
+        window.clearTimeout(toastTimerRef.current);
+      }
+      setToast({ message, actionLabel: opts?.actionLabel, onAction: opts?.onAction });
+      toastTimerRef.current = window.setTimeout(() => {
+        setToast((curr) => (curr?.message === message ? null : curr));
+      }, opts?.durationMs ?? 4200);
+    },
+    []
+  );
+
+  // Keyboard shortcuts: 1-4 switch workspace tabs when not typing in an input
+  useEffect(() => {
+    const onKeyDown = (e: KeyboardEvent) => {
+      if (e.metaKey || e.ctrlKey || e.altKey) return;
+      const target = e.target as HTMLElement | null;
+      if (
+        target &&
+        (target.tagName === 'INPUT' ||
+          target.tagName === 'TEXTAREA' ||
+          target.tagName === 'SELECT' ||
+          target.isContentEditable)
+      ) {
+        return;
+      }
+      if (e.key === '1') setActiveTab('map');
+      else if (e.key === '2') setActiveTab('field');
+      else if (e.key === '3') setActiveTab('mesh');
+      else if (e.key === '4') setActiveTab('cloud');
+    };
+    window.addEventListener('keydown', onKeyDown);
+    return () => window.removeEventListener('keydown', onKeyDown);
   }, []);
 
   const recordTelemetry = useCallback((entry: Omit<InferenceTelemetryEntry, 'id' | 'timestamp'>) => {
@@ -148,7 +204,6 @@ export function App() {
     ]);
   }, []);
 
-  // Initialize Firebase AI Logic + App Check + Firestore + Remote Config + Auth & Probe Chrome Nano 4
   const bootstrapFirebase = useCallback(async () => {
     const state = await initFirebaseServices();
     setFirebaseState(state);
@@ -172,15 +227,14 @@ export function App() {
     refreshNano();
   }, [bootstrapFirebase, refreshNano]);
 
-  // React automatically to real browser offline/online transitions (great for Chrome DevTools offline test!)
   useEffect(() => {
     const goOffline = () => {
       setOperatingMode('FIELD_OFFLINE');
-      showToast('Network lost — switched automatically to IN-FIELD OFFLINE (On-Device Nano 4 + Local Mesh)');
+      showToast('Network lost. Switched to Field offline mode (Nano 4 and local mesh)');
     };
     const goOnline = () => {
       setOperatingMode('BASE_CAMP_ONLINE');
-      showToast('Network restored — Base Camp Cloud sync available');
+      showToast('Network restored. Base camp cloud sync available');
     };
     window.addEventListener('offline', goOffline);
     window.addEventListener('online', goOnline);
@@ -190,12 +244,10 @@ export function App() {
     };
   }, [showToast]);
 
-  // Persist local offline database whenever state updates
   useEffect(() => {
     persistLocalDatabase({ camps, hazards, reports, alerts, uncertaintyLogs });
   }, [camps, hazards, reports, alerts, uncertaintyLogs]);
 
-  // Adaptive X-Cycle Computation (Whiteboard algorithm!)
   const adaptiveCycle = useMemo(() => {
     const hasCriticalEmergency =
       camps.some((c) => c.status === 'DESTROYED') ||
@@ -216,11 +268,9 @@ export function App() {
 
   const [secondsToNextCycle, setSecondsToNextCycle] = useState<number>(adaptiveCycle.cycleSec);
 
-  // Real Cross-Tab Local Mesh Transceiver (BroadcastChannel)
   useEffect(() => {
     const handlePacket = (packet: MeshPacket) => {
       if (packet.type === 'MESH_PING') {
-        // Respond to newly opened peer tab
         transceiverRef.current?.broadcast({
           type: 'MESH_PONG',
           cycleSec: adaptiveCycle.cycleSec,
@@ -229,13 +279,12 @@ export function App() {
         });
       }
 
-      // Register live browser tab peer in topology
       setPeers((prev) => {
         const exists = prev.some((p) => p.id === packet.senderId);
         const livePeer: MeshPeer = {
           id: packet.senderId,
           callsign: packet.senderCallsign,
-          role: 'Live Tab Handset',
+          role: 'Live tab handset',
           coords: { x: 495, y: 295 },
           lastSyncTime: packet.timestamp,
           dbVersion: Math.max(...(packet.camps?.map((c) => c.version) ?? [14])),
@@ -266,14 +315,14 @@ export function App() {
               recordsExchanged: updatedCount,
               summary:
                 newlyDestroyed.length > 0
-                  ? `CRITICAL MESH RELAY: Received camp DESTROYED update for ${newlyDestroyed.map((c) => c.name).join(', ')}!`
-                  : `Merged ${updatedCount} newer aid camp record(s) from live peer tab.`,
+                  ? `Critical mesh relay: received destroyed status for ${newlyDestroyed.map((c) => c.name).join(', ')}.`
+                  : `Merged ${updatedCount} newer camp record(s) from live peer tab.`,
               channel: 'BROADCAST_CHANNEL',
             },
             ...prev.slice(0, 29),
           ]);
           showToast(
-            `Local Mesh synced ${updatedCount} camp update(s) from ${packet.senderCallsign}!`
+            `Local mesh synced ${updatedCount} camp update(s) from ${packet.senderCallsign}`
           );
         }
       }
@@ -299,7 +348,6 @@ export function App() {
     transceiverRef.current = transceiver;
     setDeviceCallsign(transceiver.callsign);
 
-    // Announce presence to any already-open tabs
     transceiver.broadcast({
       type: 'MESH_PING',
       cycleSec: 15,
@@ -335,25 +383,24 @@ export function App() {
           id: `mesh-${Date.now()}-${Math.random().toString(36).slice(2, 5)}`,
           timestamp: new Date().toISOString(),
           fromPeer: deviceCallsign,
-          toPeer: `${peers.length} Nearby Handsets`,
+          toPeer: `${peers.length} nearby handsets`,
           cycleIntervalSec: adaptiveCycle.cycleSec,
           recordsExchanged: campsRef.current.length,
           summary: manual
-            ? `Manual gossip broadcast (${campsRef.current.length} camps, ${alertsRef.current.filter((a) => !a.acknowledged).length} active alerts) over Local Mesh.`
-            : `Scheduled X-cycle (${adaptiveCycle.cycleSec}s · ${adaptiveCycle.regime}) peer DB heartbeat completed.`,
+            ? `Manual gossip broadcast (${campsRef.current.length} camps, ${alertsRef.current.filter((a) => !a.acknowledged).length} active alerts) over local mesh.`
+            : `Scheduled ${adaptiveCycle.cycleSec}s (${adaptiveCycle.regime.toLowerCase().replace('_', ' ')}) peer heartbeat completed.`,
           channel: peers.some((p) => p.isLiveTab) ? 'BROADCAST_CHANNEL' : 'SIMULATED_MESH',
         },
         ...prev.slice(0, 29),
       ]);
 
       if (manual) {
-        showToast(`Local Mesh gossip broadcast sent to ${peers.length} peer handsets.`);
+        showToast(`Local mesh gossip sent to ${peers.length} peer handsets`);
       }
     },
     [adaptiveCycle.cycleSec, adaptiveCycle.regime, deviceCallsign, peers, showToast]
   );
 
-  // Adaptive X-cycle live countdown timer
   useEffect(() => {
     setSecondsToNextCycle(adaptiveCycle.cycleSec);
     const id = setInterval(() => {
@@ -368,7 +415,6 @@ export function App() {
     return () => clearInterval(id);
   }, [adaptiveCycle.cycleSec, triggerMeshGossip]);
 
-  // Pre-departure "Download Field Pack" (caches DB + initializes Gemini Nano 4 via Firebase AI Logic!)
   const handleDownloadFieldPack = async () => {
     setDownloadingPack(true);
     setNanoDownloadProgress(0);
@@ -384,8 +430,8 @@ export function App() {
       setSnapshot(snap);
       showToast(
         warmRes.ready
-          ? `Field Pack ${snap.checksum} ready! Gemini Nano 4 initialized for offline inference.`
-          : `Offline DB Pack ${snap.checksum} cached! (${warmRes.message})`
+          ? `Field pack ${snap.checksum} ready. Gemini Nano 4 initialized for offline inference`
+          : `Offline DB pack ${snap.checksum} cached (${warmRes.message})`
       );
     } finally {
       setDownloadingPack(false);
@@ -393,12 +439,15 @@ export function App() {
     }
   };
 
-  // Emergency: Mark a Camp DESTROYED -> Update DB + Broadcast Emergency Alert to Cloud & Local Mesh!
   const handleMarkCampDestroyed = (campId: string) => {
     const target = camps.find((c) => c.id === campId);
     if (!target) return;
 
+    const priorCamps = camps;
     const now = new Date().toISOString();
+    const alertId = `alert-destroyed-${Date.now()}`;
+    const reportId = `rep-destroyed-${Date.now()}`;
+
     const updatedCamps: AidCamp[] = camps.map((c) =>
       c.id === campId
         ? {
@@ -408,7 +457,7 @@ export function App() {
             safetyLevel: 1,
             dangerLevel: 10,
             uncertaintyScore: 15,
-            uncertaintyNotes: `Confirmed DESTROYED via field emergency broadcast (${deviceCallsign}). All routes diverted.`,
+            uncertaintyNotes: `Confirmed destroyed via field emergency broadcast (${deviceCallsign}). Routes diverted.`,
             lastUpdated: now,
             lastUpdatedBy: `${deviceCallsign} (Emergency Alert)`,
             version: c.version + 3,
@@ -419,7 +468,7 @@ export function App() {
                 availableBeds: 0,
                 safetyLevel: 1,
                 status: 'DESTROYED',
-                note: 'Camp destroyed — emergency evacuation broadcast',
+                note: 'Camp destroyed: emergency evacuation broadcast',
               },
             ],
           }
@@ -427,28 +476,29 @@ export function App() {
     );
 
     const emergencyAlert: EmergencyAlert = {
-      id: `alert-destroyed-${Date.now()}`,
+      id: alertId,
       severity: 'CRITICAL',
-      title: `CAMP DESTROYED: ${target.name} (${target.code})`,
-      message: `Reported destroyed by ${deviceCallsign}. Cloud DB & Local Mesh peers alerted immediately — Safest Path router diverted to remaining operational camps.`,
+      title: `Camp destroyed: ${target.name} (${target.code})`,
+      message: `Reported by ${deviceCallsign}. Cloud DB and mesh peers alerted; safest route diverted to remaining active camps.`,
       campId: target.id,
       timestamp: now,
-      source: operatingMode === 'FIELD_OFFLINE' ? `Local Mesh (${deviceCallsign})` : 'Base Camp Cloud + Mesh',
+      source:
+        operatingMode === 'FIELD_OFFLINE' ? `Local Mesh (${deviceCallsign})` : 'Base Camp Cloud',
       acknowledged: false,
       propagatedViaMesh: true,
     };
 
     const destructionReport: FieldReport = {
-      id: `rep-destroyed-${Date.now()}`,
+      id: reportId,
       campId: target.id,
       campName: target.name,
       workerId: deviceCallsign,
-      workerName: `${deviceCallsign} (Emergency Report)`,
+      workerName: `${deviceCallsign} (Emergency)`,
       timestamp: now,
       reportedBeds: 0,
       reportedSafety: 1,
       reportedStatus: 'DESTROYED',
-      notes: 'CRITICAL: Camp destroyed / inoperable. Immediate fleet-wide rerouting activated.',
+      notes: 'Camp inoperable. Immediate fleet-wide rerouting activated.',
       source: 'FIELD_WORKER',
       syncedToCloud: operatingMode === 'BASE_CAMP_ONLINE',
     };
@@ -457,7 +507,6 @@ export function App() {
     setAlerts((prev) => [emergencyAlert, ...prev]);
     setReports((prev) => [destructionReport, ...prev]);
 
-    // Immediate emergency flood over BroadcastChannel Local Mesh!
     transceiverRef.current?.broadcast({
       type: 'MESH_GOSSIP_SYNC',
       cycleSec: 4,
@@ -474,10 +523,18 @@ export function App() {
       });
     }
 
-    showToast(`EMERGENCY ALERT SENT: ${target.name} marked DESTROYED — all routes recalculated!`);
+    showToast(`Emergency alert sent: ${target.name} marked destroyed`, {
+      durationMs: 10000,
+      actionLabel: 'Undo',
+      onAction: () => {
+        setCamps(priorCamps);
+        setAlerts((prev) => prev.filter((a) => a.id !== alertId));
+        setReports((prev) => prev.filter((r) => r.id !== reportId));
+        showToast(`Restored ${target.name} to prior status`);
+      },
+    });
   };
 
-  // Drop a new live hazard zone onto the offline tactical map and recalculate safest paths
   const handleAddHazardZone = (coords: Coordinates) => {
     const newHz: HazardZone = {
       id: `haz-custom-${Date.now()}`,
@@ -487,15 +544,14 @@ export function App() {
       radius: 65,
       dangerLevel: 8,
       active: true,
-      description: `Reported by ${deviceCallsign} at (${coords.x}, ${coords.y}) — Safest Path router updated.`,
+      description: `Reported by ${deviceCallsign} at (${coords.x}, ${coords.y}). Safest route updated.`,
       reportedBy: deviceCallsign,
       timestamp: new Date().toISOString(),
     };
     setHazards((prev) => [...prev, newHz]);
-    showToast(`Added Danger 8/10 Hazard Zone — Safest & Shortest Path recalculated!`);
+    showToast('Added danger 8/10 hazard zone and recalculated safest route');
   };
 
-  // Ask Map Locally (via Hybrid AI)
   const handleAskMapLocally = async (query: string) => {
     const res = await queryFieldAssistantStream({
       query,
@@ -517,7 +573,6 @@ export function App() {
     return res;
   };
 
-  // Field Assistant Multimodal Streaming Query
   const handleSendFieldMessage = async (params: {
     query: string;
     imageDataUrl?: string;
@@ -587,7 +642,6 @@ export function App() {
     });
   };
 
-  // Submit Field Observation Report (Offline Outbox + Local Mesh)
   const handleSubmitFieldReport = (
     payload: Omit<FieldReport, 'id' | 'timestamp' | 'syncedToCloud'>
   ) => {
@@ -605,7 +659,6 @@ export function App() {
 
     setReports((prev) => [newReport, ...prev]);
 
-    // Check if this report creates a conflict with current DB and log uncertainty automatically!
     const existingCamp = camps.find((c) => c.id === payload.campId);
     if (existingCamp && Math.abs(existingCamp.availableBeds - payload.reportedBeds) >= 3) {
       const uncEntry: UncertaintyLogEntry = {
@@ -613,7 +666,10 @@ export function App() {
         timestamp: new Date().toISOString(),
         campId: existingCamp.id,
         campName: existingCamp.name,
-        uncertaintyPct: Math.min(80, 35 + Math.abs(existingCamp.availableBeds - payload.reportedBeds) * 3),
+        uncertaintyPct: Math.min(
+          80,
+          35 + Math.abs(existingCamp.availableBeds - payload.reportedBeds) * 3
+        ),
         reason: `New field report (${payload.reportedBeds} beds) conflicts with cached DB (${existingCamp.availableBeds} beds). Queued for Cloud Gemini reconciliation.`,
         sourcesInvolved: [payload.workerName, 'Cached Aid Camp DB'],
         status: 'OPEN',
@@ -621,7 +677,6 @@ export function App() {
       setUncertaintyLogs((prev) => [uncEntry, ...prev]);
     }
 
-    // Broadcast report to local mesh peers immediately
     transceiverRef.current?.broadcast({
       type: 'MESH_GOSSIP_SYNC',
       cycleSec: adaptiveCycle.cycleSec,
@@ -632,10 +687,9 @@ export function App() {
       saveFieldReportToFirestore(newReport);
     }
 
-    showToast(`Field report logged for ${payload.campName} & shared on Local Mesh.`);
+    showToast(`Field report logged for ${payload.campName} and shared on local mesh`);
   };
 
-  // Simulate an incoming offline peer update (great for Mesh demo)
   const handleSimulateIncomingPeerReport = () => {
     const target = camps.find((c) => c.id === 'camp-north') ?? camps[0];
     const simulatedBeds = Math.max(2, target.availableBeds - 4);
@@ -649,7 +703,7 @@ export function App() {
       reportedBeds: simulatedBeds,
       reportedSafety: Math.max(3, target.safetyLevel - 1),
       reportedStatus: simulatedBeds <= 4 ? 'OVERCROWDED' : 'ACTIVE',
-      notes: `Peer mesh update: Ambulance surge arrived at ${target.name}; only ${simulatedBeds} beds open now.`,
+      notes: `Peer mesh update: ambulance surge arrived at ${target.name}; ${simulatedBeds} open beds remaining.`,
       source: 'MESH_PEER',
       syncedToCloud: false,
     };
@@ -663,15 +717,14 @@ export function App() {
         toPeer: deviceCallsign,
         cycleIntervalSec: adaptiveCycle.cycleSec,
         recordsExchanged: 1,
-        summary: `Received offline peer update for ${target.name} (${simulatedBeds} open beds) via Local Mesh.`,
+        summary: `Received offline peer update for ${target.name} (${simulatedBeds} open beds).`,
         channel: 'SIMULATED_MESH',
       },
       ...prev.slice(0, 29),
     ]);
-    showToast(`Received offline mesh update from BRAVO-2 for ${target.name}!`);
+    showToast(`Received offline mesh update from BRAVO-2 for ${target.name}`);
   };
 
-  // Cloud Command: Multimodal CCTV Bed Counter
   const handleAnalyzeCctv = async (params: {
     campId: string;
     imageDataUrl: string;
@@ -696,11 +749,10 @@ export function App() {
       multimodal: true,
     });
     showToast(
-      `CCTV Sensory Count for ${camp.name}: ${result.availableBeds} open beds (${result.uncertaintyPct}% uncertainty)`
+      `CCTV count for ${camp.name}: ${result.availableBeds} open beds (${result.uncertaintyPct}% uncertainty)`
     );
   };
 
-  // Cloud Command: Multi-Source Conflict Resolution
   const handleResolveConflicts = async () => {
     const unresolved = reports.filter((r) => !r.resolved);
     const result = await resolveConflictsCloud({
@@ -717,10 +769,9 @@ export function App() {
       latencyMs: result.latencyMs,
       multimodal: false,
     });
-    showToast(`Cloud Gemini reconciled ${result.reconciledCamps.length} aid camp(s) — review and commit!`);
+    showToast(`Reconciled ${result.reconciledCamps.length} aid camp(s). Review and commit`);
   };
 
-  // Commit Reconciled Truth to Firestore + Broadcast to Field
   const handleCommitResolution = async () => {
     if (!lastResolution) return;
     const now = new Date().toISOString();
@@ -759,8 +810,8 @@ export function App() {
       .map((u) => ({
         id: `alert-res-${u.campId}-${Date.now()}`,
         severity: 'CRITICAL' as const,
-        title: `CLOUD ALERT: ${u.campName} Status ${u.resolvedStatus}`,
-        message: `${u.conflictSummary} Safety rated ${u.resolvedSafety}/10 (${u.uncertaintyPct}% uncertainty).`,
+        title: `Cloud alert: ${u.campName} (${u.resolvedStatus.toLowerCase()})`,
+        message: `${u.conflictSummary} Safety ${u.resolvedSafety}/10 (${u.uncertaintyPct}% uncertainty).`,
         campId: u.campId,
         timestamp: now,
         source: 'Cloud Gemini Reconciliation',
@@ -777,7 +828,11 @@ export function App() {
         campName: u.campName,
         uncertaintyPct: u.uncertaintyPct,
         reason: u.uncertaintyReason,
-        sourcesInvolved: ['Cloud Gemini', 'Field Reports', ...(cctvReadings.some((r) => r.campId === u.campId) ? ['CCTV Sensor'] : [])],
+        sourcesInvolved: [
+          'Cloud Gemini',
+          'Field Reports',
+          ...(cctvReadings.some((r) => r.campId === u.campId) ? ['CCTV Sensor'] : []),
+        ],
         status: u.uncertaintyPct <= 35 ? ('RESOLVED' as const) : ('OPEN' as const),
         resolutionNote: u.conflictSummary,
       })),
@@ -800,7 +855,6 @@ export function App() {
     }
     setLastResolution(null);
 
-    // Sync to Firestore & push updated ground truth over Local Mesh
     const syncRes = await syncStateToFirestore({
       camps: nextCamps,
       alerts: [...newAlerts, ...alerts],
@@ -816,12 +870,11 @@ export function App() {
 
     showToast(
       syncRes.synced
-        ? `Committed to Cloud Firestore (${syncRes.count} docs) & broadcast to field devices!`
-        : 'Committed to Base Camp DB & broadcast to Local Mesh peers!'
+        ? `Committed to Cloud Firestore (${syncRes.count} docs) and broadcast to field devices`
+        : 'Committed to Base camp DB and broadcast to local mesh peers'
     );
   };
 
-  // Cloud Command: Long-Context Pattern Detection & Shortage Forecasting
   const handleRunPatternForecast = async () => {
     const result = await detectPatternsAndForecastCloud({
       camps,
@@ -837,7 +890,7 @@ export function App() {
       latencyMs: result.latencyMs,
       multimodal: false,
     });
-    showToast('Cloud Pattern Detection & Resource Shortage Forecast complete!');
+    showToast('Cloud pattern detection and shortage forecast complete');
   };
 
   const handleResetDemo = () => {
@@ -852,7 +905,7 @@ export function App() {
     setLastResolution(null);
     setLastForecast(null);
     setMessages(INITIAL_MESSAGES);
-    showToast('Demo scenario reset to initial Crisis Connection state.');
+    showToast('Demo scenario reset to initial state');
   };
 
   const unsyncedCount = reports.filter((r) => !r.resolved).length;
@@ -860,7 +913,7 @@ export function App() {
   const inCloudCalls = telemetry.filter((t) => t.actualSource === 'IN_CLOUD').length;
 
   return (
-    <div className="min-h-screen bg-slate-950 text-slate-100 flex flex-col">
+    <div className="flex min-h-screen flex-col bg-canvas text-ink-primary">
       <TopCommandBar
         activeTab={activeTab}
         onSelectTab={setActiveTab}
@@ -869,8 +922,8 @@ export function App() {
           setOperatingMode(mode);
           showToast(
             mode === 'FIELD_OFFLINE'
-              ? 'Switched to IN-FIELD OFFLINE: AI locked to On-Device Gemini Nano 4 + Local Mesh'
-              : 'Switched to BASE CAMP ONLINE: Cloud Gemini + Firestore Sync enabled'
+              ? 'Switched to Field offline: AI locked to on-device Gemini Nano 4 and local mesh'
+              : 'Switched to Base camp online: Cloud Gemini and Firestore sync enabled'
           );
         }}
         onDownloadFieldPack={handleDownloadFieldPack}
@@ -886,22 +939,25 @@ export function App() {
         }}
         nanoStatus={nanoStatus}
         firebaseConfigured={firebaseState.configured}
-        appCheckActive={firebaseState.appCheckActive}
         activeAlerts={alerts}
         onDismissAlert={(id) =>
           setAlerts((prev) => prev.map((a) => (a.id === id ? { ...a, acknowledged: true } : a)))
         }
         onOpenDiagnostics={() => setDiagnosticsOpen(true)}
-        onDeviceCount={onDeviceCalls}
-        inCloudCount={inCloudCalls}
+        onToggleDemoGuide={() => setDemoGuideOpen((v) => !v)}
+        demoGuideOpen={demoGuideOpen}
       />
 
-      <main className="mx-auto w-full max-w-[1600px] flex-1 px-4 py-4">
+      <main className="mx-auto w-full max-w-[1600px] flex-1 px-4 py-4 lg:px-6">
         <ClosedLoopBanner
           operatingMode={operatingMode}
           activeTab={activeTab}
           snapshot={snapshot}
           unsyncedReportCount={unsyncedCount}
+          nanoStatus={nanoStatus}
+          appCheckActive={firebaseState.appCheckActive}
+          onDeviceCount={onDeviceCalls}
+          inCloudCount={inCloudCalls}
           onSelectTab={setActiveTab}
           onDownloadFieldPack={handleDownloadFieldPack}
         />
@@ -971,7 +1027,6 @@ export function App() {
         )}
       </main>
 
-      {/* Firebase & Hybrid AI Diagnostics Modal */}
       <FirebaseDiagnosticsModal
         open={diagnosticsOpen}
         onClose={() => setDiagnosticsOpen(false)}
@@ -983,17 +1038,29 @@ export function App() {
         onResetDemoData={handleResetDemo}
       />
 
-      {/* 3-Minute Hackathon Demo Interactive Script Drawer */}
       <DemoWalkthroughDrawer
+        open={demoGuideOpen}
+        onClose={() => setDemoGuideOpen(false)}
         onSelectTab={setActiveTab}
         onSetMode={setOperatingMode}
         onDownloadPack={handleDownloadFieldPack}
       />
 
-      {/* Toast Notification */}
       {toast && (
-        <div className="fixed bottom-4 right-4 z-50 max-w-md rounded-xl border border-cyan-500/40 bg-slate-900/95 px-4 py-3 text-xs font-medium text-cyan-100 shadow-2xl backdrop-blur">
-          {toast}
+        <div
+          role="status"
+          aria-live="polite"
+          className="fixed bottom-4 right-4 z-50 flex max-w-md items-center gap-3 rounded-lg border border-control bg-surface px-4 py-3 text-xs font-medium text-ink-primary shadow-overlay"
+        >
+          <span className="leading-snug">{toast.message}</span>
+          {toast.actionLabel && toast.onAction && (
+            <button
+              onClick={toast.onAction}
+              className="btn-secondary shrink-0 rounded-md px-2.5 py-1 text-xs font-medium text-ink-primary"
+            >
+              {toast.actionLabel}
+            </button>
+          )}
         </div>
       )}
     </div>

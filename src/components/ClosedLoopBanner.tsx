@@ -1,13 +1,7 @@
 import React from 'react';
-import {
-  ArrowRight,
-  Cloud,
-  Cpu,
-  Download,
-  GitMerge,
-  Radio,
-} from 'lucide-react';
+import { ChevronRightIcon } from './icons';
 import { FieldPackSnapshot, OperatingMode } from '../types/crisis';
+import { OnDeviceCapabilityStatus } from '../services/hybridAI';
 import { ActiveTab } from './TopCommandBar';
 
 interface ClosedLoopBannerProps {
@@ -15,6 +9,10 @@ interface ClosedLoopBannerProps {
   activeTab: ActiveTab;
   snapshot: FieldPackSnapshot | null;
   unsyncedReportCount: number;
+  nanoStatus: OnDeviceCapabilityStatus;
+  appCheckActive: boolean;
+  onDeviceCount: number;
+  inCloudCount: number;
   onSelectTab: (tab: ActiveTab) => void;
   onDownloadFieldPack: () => void;
 }
@@ -24,6 +22,10 @@ export const ClosedLoopBanner: React.FC<ClosedLoopBannerProps> = ({
   activeTab,
   snapshot,
   unsyncedReportCount,
+  nanoStatus,
+  appCheckActive,
+  onDeviceCount,
+  inCloudCount,
   onSelectTab,
   onDownloadFieldPack,
 }) => {
@@ -31,94 +33,127 @@ export const ClosedLoopBanner: React.FC<ClosedLoopBannerProps> = ({
 
   const stages = [
     {
-      num: '01',
-      title: 'Base Camp DB',
-      subtitle: 'Firestore + Map + Protocols',
-      icon: <Cloud className="h-3.5 w-3.5" />,
+      id: 'base',
+      label: 'Base DB',
+      meta: 'Firestore',
       active: !isOffline && activeTab === 'map',
       done: true,
       onClick: () => onSelectTab('map'),
     },
     {
-      num: '02',
-      title: 'Pre-Departure Pack',
-      subtitle: snapshot ? `Cached ${snapshot.checksum}` : 'Download DB + Nano 4',
-      icon: <Download className="h-3.5 w-3.5" />,
+      id: 'pack',
+      label: 'Field pack',
+      meta: snapshot ? snapshot.checksum : 'Not cached',
       active: Boolean(snapshot) && !isOffline,
       done: Boolean(snapshot),
       onClick: onDownloadFieldPack,
     },
     {
-      num: '03',
-      title: 'In-Field Hybrid AI',
-      subtitle: isOffline ? 'ONLY_ON_DEVICE (Nano 4)' : 'PREFER_ON_DEVICE',
-      icon: <Cpu className="h-3.5 w-3.5" />,
+      id: 'field',
+      label: 'Hybrid AI',
+      meta: isOffline ? 'On-device' : 'Prefer local',
       active: isOffline || activeTab === 'field',
       done: isOffline,
       onClick: () => onSelectTab('field'),
     },
     {
-      num: '04',
-      title: 'Local Mesh Gossip',
-      subtitle: 'Adaptive X-Cycle Peer Sync',
-      icon: <Radio className="h-3.5 w-3.5" />,
+      id: 'mesh',
+      label: 'Local mesh',
+      meta: 'Adaptive sync',
       active: activeTab === 'mesh',
       done: false,
       onClick: () => onSelectTab('mesh'),
     },
     {
-      num: '05',
-      title: 'Cloud Reconciliation',
-      subtitle:
-        unsyncedReportCount > 0
-          ? `${unsyncedReportCount} conflict(s) + CCTV`
-          : 'Conflict + Forecast + Unc.',
-      icon: <GitMerge className="h-3.5 w-3.5" />,
+      id: 'cloud',
+      label: 'Cloud sync',
+      meta: unsyncedReportCount > 0 ? `${unsyncedReportCount} pending` : 'Reconciled',
       active: activeTab === 'cloud',
       done: unsyncedReportCount === 0,
       onClick: () => onSelectTab('cloud'),
     },
   ];
 
+  const nanoLabel =
+    nanoStatus.availability === 'available'
+      ? 'Ready'
+      : nanoStatus.availability === 'downloadable'
+        ? 'Downloadable'
+        : nanoStatus.availability === 'downloading'
+          ? 'Downloading'
+          : 'Unavailable';
+
   return (
-    <div className="mb-4 overflow-x-auto rounded-2xl border border-slate-800/90 bg-slate-900/60 px-3 py-2">
-      <div className="flex min-w-[760px] items-center justify-between gap-2">
-        {stages.map((st, idx) => (
-          <React.Fragment key={st.num}>
-            <button
-              onClick={st.onClick}
-              className={`flex flex-1 items-center gap-2.5 rounded-xl border px-3 py-2 text-left transition ${
-                st.active
-                  ? 'border-cyan-500/50 bg-cyan-500/10 shadow-sm shadow-cyan-950/50'
-                  : 'border-slate-800/80 bg-slate-950/60 hover:border-slate-700'
-              }`}
-            >
-              <div
-                className={`flex h-7 w-7 shrink-0 items-center justify-center rounded-lg ${
+    <div className="mb-4 flex flex-wrap items-center justify-between gap-3 border-b border-hairline pb-3">
+      {/* Closed-loop workflow steps — scrollbar-free horizontal flow on narrow screens */}
+      <div className="relative min-w-0 max-w-full flex-1">
+        <div
+          aria-label="Closed-loop hybrid workflow"
+          className="scrollbar-none flex items-center gap-1.5 overflow-x-auto pr-4 text-xs"
+        >
+          {stages.map((st, idx) => (
+            <React.Fragment key={st.id}>
+              <button
+                onClick={st.onClick}
+                className={`flex shrink-0 items-center gap-1.5 rounded-md px-2 py-1 transition-colors duration-150 ease-instrument ${
                   st.active
-                    ? 'bg-cyan-500/20 text-cyan-300'
-                    : st.done
-                      ? 'bg-emerald-500/15 text-emerald-400'
-                      : 'bg-slate-800 text-slate-400'
+                    ? 'bg-raised text-ink-primary'
+                    : 'text-ink-secondary hover:bg-raised/60 hover:text-ink-primary'
                 }`}
               >
-                {st.icon}
-              </div>
-              <div className="min-w-0">
-                <div className="flex items-center gap-1.5">
-                  <span className="font-mono text-[9.5px] font-bold text-slate-500">
-                    {st.num}
-                  </span>
-                  <span className="truncate text-xs font-bold text-slate-100">{st.title}</span>
-                </div>
-                <div className="truncate text-[10px] text-slate-400">{st.subtitle}</div>
-              </div>
-            </button>
-            {idx < stages.length - 1 && (
-              <ArrowRight className="h-3.5 w-3.5 shrink-0 text-slate-600" />
-            )}
-          </React.Fragment>
-        ))}
+                <span
+                  className={`h-1.5 w-1.5 rounded-full ${
+                    st.active
+                      ? isOffline
+                        ? 'bg-caution'
+                        : 'bg-accent'
+                      : st.done
+                        ? 'bg-safe'
+                        : 'bg-ink-muted/50'
+                  }`}
+                />
+                <span className="font-medium">{st.label}</span>
+                <span className="hidden font-mono text-[11px] text-ink-muted sm:inline">
+                  {st.meta}
+                </span>
+              </button>
+              {idx < stages.length - 1 && (
+                <ChevronRightIcon size={12} className="shrink-0 text-ink-muted/60" />
+              )}
+            </React.Fragment>
+          ))}
+        </div>
+        <div
+          aria-hidden="true"
+          className="pointer-events-none absolute inset-y-0 right-0 w-6 bg-gradient-to-l from-canvas to-transparent sm:hidden"
+        />
+      </div>
+
+      {/* Compact runtime telemetry */}
+      <div className="hidden shrink-0 items-center gap-4 text-xs text-ink-muted xl:flex">
+        <span className="flex items-center gap-1.5">
+          <span>Nano 4</span>
+          <span
+            className={`font-medium ${
+              nanoStatus.availability === 'available'
+                ? 'text-safe'
+                : nanoStatus.availability === 'downloadable'
+                  ? 'text-accent'
+                  : 'text-ink-secondary'
+            }`}
+          >
+            {nanoLabel}
+          </span>
+        </span>
+        <span className="flex items-center gap-1.5">
+          <span>App Check</span>
+          <span className={appCheckActive ? 'font-medium text-safe' : 'text-ink-secondary'}>
+            {appCheckActive ? 'Enforced' : 'Sandbox'}
+          </span>
+        </span>
+        <span className="tabular font-mono text-[11px] text-ink-secondary">
+          {onDeviceCount} local / {inCloudCount} cloud
+        </span>
       </div>
     </div>
   );
