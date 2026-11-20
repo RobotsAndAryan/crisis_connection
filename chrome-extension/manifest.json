@@ -1,0 +1,19 @@
+{
+  "manifest_version": 3,
+  "name": "Crisis Connection — Hybrid AI Aid Network",
+  "version": "1.0.0",
+  "description": "Closed-loop Hybrid AI humanitarian aid & offline triage assistant powered by Firebase AI Logic (Gemini Nano 4 on-device + Cloud Gemini fallback).",
+  "permissions": ["sidePanel", "storage"],
+  "action": {
+    "default_title": "Open Crisis Connection Side Panel"
+  },
+  "side_panel": {
+    "default_path": "index.html"
+  },
+  "background": {
+    "service_worker": "background.js"
+  },
+  "icons": {
+    "128": "icon.png"
+  }
+}
