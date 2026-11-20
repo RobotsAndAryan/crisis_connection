@@ -1,6 +1,9 @@
 # Crisis Connection — Closed-Loop Hybrid AI Humanitarian Aid Network
 
 [![License: Apache 2.0](https://img.shields.io/badge/License-Apache_2.0-blue.svg)](./LICENSE)
+[![Live Demo](https://img.shields.io/badge/Live_Demo-crisis--connection.web.app-06b6d4)](https://crisis-connection.web.app)
+
+**Live Hosted Demo:** [https://crisis-connection.web.app](https://crisis-connection.web.app)
 
 Built for **#BuildHybridAI** using the **Firebase AI Logic Hybrid Inference SDK** across **Web (Chrome PWA + Side Panel Extension)**, **Android (Gemini Nano 4)**, and **iOS (Apple Foundation Models)** — backed by **Firebase App Check**, **Cloud Firestore** (offline persistence), **Firebase Remote Config**, and **Firebase Authentication**.
 
