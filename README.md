@@ -49,7 +49,9 @@ When disasters knock out cell towers, humanitarian field workers lose cloud conn
   - **Sensory CCTV / Ward Photo Bed Counter:** Analyzes generated IR-optical ward CCTV feeds or uploaded/live camera photos via structured JSON (`Schema.object`) to count open vs. occupied beds, spot roof collapse or smoke occlusion, and quantify visual uncertainty.
   - **AI Conflict Resolution & Logged Uncertainty:** Reconciles conflicting offline field reports, mesh relays, and CCTV readings against prior Firestore state, explicitly logging residual uncertainty (`0–100%`) before committing back to Firestore and broadcasting to field units.
   - **Pattern Detection & Shortage Forecasting:** Long-context analysis of multi-hour camp history predicting depletion countdowns and generating a Base Reorganization Plan.
-- **Built-in 3-Minute Demo Walkthrough:** Click **3-Min Demo Guide** (bottom-left) for a guided step-by-step walkthrough of the entire closed-loop experience.
+- **Built-in 3-Minute Demo Walkthrough:** Click **Demo guide** in the top command bar (or press keys `1`–`4` to switch tabs) for a guided step-by-step walkthrough of the entire closed-loop experience.
+
+> **Multi-Device Setup Guide:** See [docs/RUN_ON_ALL_DEVICES.md](docs/RUN_ON_ALL_DEVICES.md) for complete step-by-step instructions to run Crisis Connection on **Web (Desktop & Mobile PWA)**, **Chrome Side Panel Extension**, **Android (Gemini Nano 4)**, and **iOS / macOS (Apple Foundation Models)**.
 
 ---
 
@@ -97,7 +99,7 @@ npx firebase-tools login
 npx firebase-tools deploy --only hosting,firestore:rules
 ```
 
-See [docs/DEVPOST_SUBMISSION.md](docs/DEVPOST_SUBMISSION.md) for the complete Devpost submission write-up, 2:45 YouTube demo script, and original whiteboard architecture ([docs/whiteboard-architecture.jpeg](docs/whiteboard-architecture.jpeg)).
+See [docs/RUN_ON_ALL_DEVICES.md](docs/RUN_ON_ALL_DEVICES.md) for full Web, Chrome Extension, Android, and iOS/macOS setup steps, [DESIGN.md](DESIGN.md) for the Matte Graphite design system, and [docs/DEVPOST_SUBMISSION.md](docs/DEVPOST_SUBMISSION.md) for the Devpost submission write-up, demo script, and original whiteboard architecture ([docs/whiteboard-architecture.jpeg](docs/whiteboard-architecture.jpeg)).
 
 ---
 
